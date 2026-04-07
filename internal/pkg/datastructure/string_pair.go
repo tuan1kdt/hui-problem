@@ -1,4 +1,4 @@
-package tku
+package datastructure
 
 // StringPair pairs a string (e.g. itemset) with an integer utility, ordered by Y (Java TKU).
 type StringPair struct {

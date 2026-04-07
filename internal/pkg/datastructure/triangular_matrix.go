@@ -1,6 +1,6 @@
-package tku
+package datastructure
 
-// TriangularMatrix stores pairwise values for item pairs (TKU pre-evaluation).
+// TriangularMatrix stores pairwise aggregates for item pairs (TKU/PTKU pre-evaluation / PE).
 type TriangularMatrix struct {
 	Matrix       [][]int
 	ElementCount int

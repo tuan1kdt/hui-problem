@@ -1,4 +1,4 @@
-package tku
+package datastructure
 
 // RedBlackTree is a multiset BST with red-black balancing (SPMF-compatible behavior).
 type RedBlackTree[T any] struct {
@@ -410,15 +410,18 @@ func (t *RedBlackTree[T]) PopMaximum() T {
 
 // NewIntRedBlackTree is a multiset ordered by int value.
 func NewIntRedBlackTree() *RedBlackTree[int] {
-	return NewRedBlackTree(true, func(a, b int) int {
-		if a < b {
-			return -1
-		}
-		if a > b {
-			return 1
-		}
-		return 0
-	}, func(a, b int) bool { return a == b })
+	return NewRedBlackTree(
+		true,
+		func(a, b int) int {
+			if a < b {
+				return -1
+			}
+			if a > b {
+				return 1
+			}
+			return 0
+		},
+		func(a, b int) bool { return a == b })
 }
 
 // NewStringPairRedBlackTree matches SPMF StringPair ordering (Y primary per compareTo; X tie-break).

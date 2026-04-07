@@ -2,6 +2,8 @@ package ptku
 
 import (
 	"sync"
+
+	"hui-problem/internal/pkg/datastructure"
 )
 
 // SafeHeap is the shared mutable top-k border (minUtil) used by NU, MD, MC, etc.
@@ -46,7 +48,7 @@ func (s *SafeHeap) SetMinUtil(v float64) {
 //  4. If heap size ≥ k, promote global minUtil to the multiset minimum when that lifts the border.
 //
 // heap must belong to a single goroutine (or be externally locked); only minUtil is shared.
-func (s *SafeHeap) TryUpdateWithHeap(heap *RedBlackTree[int], newValue int) {
+func (s *SafeHeap) TryUpdateWithHeap(heap *datastructure.RedBlackTree[int], newValue int) {
 	s.mu.RLock()
 	minU := s.minUtil
 	k := s.k

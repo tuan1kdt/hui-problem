@@ -5,11 +5,12 @@ import (
 	"container/heap"
 	"fmt"
 	"os"
-	"runtime"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+
+	"hui-problem/internal/pkg/memory"
 )
 
 // AlgoTKOBasic is the SPMF "TKO-Basic" algorithm (utility-list top-k HUI mining).
@@ -19,8 +20,7 @@ type AlgoTKOBasic struct {
 	kHeap        itemsetMinHeap
 	mapItemToTWU map[int]int
 
-	totalTime   float64
-	maxMemoryMB float64
+	totalTime float64
 }
 
 // NewAlgoTKOBasic creates a new miner.
@@ -32,8 +32,8 @@ func NewAlgoTKOBasic() *AlgoTKOBasic {
 
 // RunAlgorithm scans the database, mines, and writes results to output (Java: runAlgorithm + writeResultTofile).
 func (a *AlgoTKOBasic) RunAlgorithm(inputPath, outputPath string, k int) error {
-	a.maxMemoryMB = 0
-	a.sampleMemory()
+	memory.Reset()
+	memory.Sample()
 
 	start := time.Now()
 	a.minUtility = 1
@@ -54,29 +54,20 @@ func (a *AlgoTKOBasic) RunAlgorithm(inputPath, outputPath string, k int) error {
 		return err
 	}
 
-	a.sampleMemory()
+	memory.Sample()
 
 	if err := a.search([]int{}, nil, listItems); err != nil {
 		return err
 	}
 
-	a.sampleMemory()
+	memory.Sample()
 	a.totalTime = time.Since(start).Seconds()
 
 	if err := a.WriteResultToFile(outputPath); err != nil {
 		return err
 	}
-	a.sampleMemory()
+	memory.Sample()
 	return nil
-}
-
-func (a *AlgoTKOBasic) sampleMemory() {
-	var ms runtime.MemStats
-	runtime.ReadMemStats(&ms)
-	used := float64(ms.Alloc) / (1024 * 1024)
-	if used > a.maxMemoryMB {
-		a.maxMemoryMB = used
-	}
 }
 
 func (a *AlgoTKOBasic) firstPass(inputPath string) error {
@@ -192,7 +183,7 @@ func (a *AlgoTKOBasic) compareItems(item1, item2 int) int {
 }
 
 func (a *AlgoTKOBasic) search(prefix []int, pUL *UtilityList, uls []*UtilityList) error {
-	a.sampleMemory()
+	memory.Sample()
 	for i := 0; i < len(uls); i++ {
 		X := uls[i]
 		if X.SumIutils >= a.minUtility {
@@ -315,7 +306,7 @@ func (a *AlgoTKOBasic) PrintStats() {
 	fmt.Println("=============  TKO-Basic (Go)  =============")
 	fmt.Println(" High-utility itemsets count :", a.kHeap.Len())
 	fmt.Println(" Total time ~", a.totalTime, "s")
-	fmt.Println(" Memory ~", a.maxMemoryMB, "MB (approx)")
+	fmt.Println(" Memory ~", memory.MaxMB(), "MB (approx)")
 	fmt.Println("===================================================")
 }
 

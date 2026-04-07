@@ -5,6 +5,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	"hui-problem/internal/pkg/datastructure"
 )
 
 // Phase2 runs TKU phase 2: verify candidates against the database.
@@ -33,12 +35,14 @@ func (p *Phase2) RunAlgorithm(minUtil, transactionCount, currentK int, inputPath
 	p.sortedCandidatePath = sortedCandidateFile
 	p.outputFilePath = outputFile
 
+	// Phase 2 step 1: Open a temp file to collect exact-utility results for candidates that pass verification.
 	tmp, err := os.Create(p.temporaryFilePath)
 	if err != nil {
 		return err
 	}
 	bfw := bufio.NewWriter(tmp)
 
+	// Phase 2 step 2: Allocate and load the full database into memory (items and per-item quantities per transaction).
 	hdb := make([][]int, p.numberOfTransactions)
 	bnf := make([][]int, p.numberOfTransactions)
 	p.initialization(hdb, bnf)
@@ -48,6 +52,7 @@ func (p *Phase2) RunAlgorithm(minUtil, transactionCount, currentK int, inputPath
 		return err
 	}
 
+	// Phase 2 step 3: For each sorted candidate, compute exact utility by scanning transactions; write survivors to the temp file.
 	if _, err := p.readCandidateItemsets(hdb, bnf, p.sortedCandidatePath, bfw); err != nil {
 		_ = tmp.Close()
 		return err
@@ -60,6 +65,7 @@ func (p *Phase2) RunAlgorithm(minUtil, transactionCount, currentK int, inputPath
 		return err
 	}
 
+	// Phase 2 step 4: Read verified lines from the temp file and copy those meeting minUtility to the final output (SPMF-style "#UTIL").
 	in, err := os.Open(p.temporaryFilePath)
 	if err != nil {
 		return err
@@ -103,6 +109,7 @@ func (p *Phase2) RunAlgorithm(minUtil, transactionCount, currentK int, inputPath
 		return err
 	}
 
+	// Phase 2 step 5: Remove temporary files (sorted candidates and intermediate HUI list).
 	_ = os.Remove(p.temporaryFilePath)
 	_ = os.Remove(p.sortedCandidatePath)
 	return nil
@@ -113,8 +120,10 @@ func (p *Phase2) NumberOfTopKHUIs() int {
 	return p.numTopKHUI
 }
 
+// readCandidateItemsets walks sorted candidates; for each, sums exact utility over all transactions containing the full itemset,
+// writes lines that meet the threshold, and optionally tightens minUtility via a top-k heap of utilities (see updateHeap).
 func (p *Phase2) readCandidateItemsets(hdb, bnf [][]int, ciPath string, lbfw *bufio.Writer) (int, error) {
-	h := NewStringPairRedBlackTree()
+	h := datastructure.NewStringPairRedBlackTree()
 
 	in, err := os.Open(ciPath)
 	if err != nil {
@@ -192,6 +201,7 @@ func indexOfInt(slice []int, v int) int {
 	return -1
 }
 
+// readDatabase reads the horizontal DB format into parallel slices of item ids and per-item benefits (quantities).
 func readDatabase(hdb, bnf [][]int, dbPath string) error {
 	in, err := os.Open(dbPath)
 	if err != nil {
@@ -228,12 +238,13 @@ func (p *Phase2) initialization(hdb, bnf [][]int) {
 	}
 }
 
-func (p *Phase2) updateHeap(nch *RedBlackTree[StringPair], hui string, utility int) {
+// updateHeap keeps the k highest verified utilities; raises minUtility when the k-th smallest utility in the heap increases.
+func (p *Phase2) updateHeap(nch *datastructure.RedBlackTree[datastructure.StringPair], hui string, utility int) {
 	if nch.Size() < p.theCurrentK {
-		nch.Add(StringPair{X: hui, Y: utility})
+		nch.Add(datastructure.StringPair{X: hui, Y: utility})
 	} else if nch.Size() >= p.theCurrentK {
 		if utility > p.minUtility {
-			nch.Add(StringPair{X: hui, Y: utility})
+			nch.Add(datastructure.StringPair{X: hui, Y: utility})
 			nch.PopMinimum()
 		}
 	}

@@ -6,6 +6,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"hui-problem/internal/pkg/datastructure"
 )
 
 func sampleDBPath(t *testing.T) string {
@@ -138,7 +140,7 @@ func TestPTKU_CompareWithJava_K8(t *testing.T) {
 }
 
 func TestTriangularMatrixIncrement(t *testing.T) {
-	m := NewTriangularMatrix(5)
+	m := datastructure.NewTriangularMatrix(5)
 	m.IncrementCount(1, 2, 1)
 	m.IncrementCount(1, 2, 1)
 	if m.GetSupportForItems(1, 2) != 2 {

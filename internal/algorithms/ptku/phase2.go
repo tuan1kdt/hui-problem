@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	"hui-problem/internal/pkg/datastructure"
 )
 
 // Phase2 runs TKU Phase 2: verify Phase-1 candidates against the original DB for exact EU(X).
@@ -38,7 +40,7 @@ func NewPhase2(workers int) *Phase2 {
 //
 // Step A: allocate hdb/bnf; Step B: readDatabase; Step C: readCandidateItemsetsParallel (SE order,
 // parallel exact sum per candidate, temp HUI file, top-k heap); Step D: format final SPMF lines.
-func (p *Phase2) RunAlgorithm(minUtil, transactionCount, currentK int, inputPath string, candidates []StringPair, outputFile string) error {
+func (p *Phase2) RunAlgorithm(minUtil, transactionCount, currentK int, inputPath string, candidates []datastructure.StringPair, outputFile string) error {
 	p.minUtility = minUtil
 	p.numberOfTransactions = transactionCount
 	p.theCurrentK = currentK
@@ -130,8 +132,8 @@ func (p *Phase2) NumberOfTopKHUIs() int {
 // readCandidateItemsetsParallel walks candidates in slice order (must be SE-sorted by caller).
 // For each: SE skip if estimate < minUtility; compute exact utility via parallelExactUtility;
 // if exact ≥ minUtility, append to temp writer and update the top-k StringPair heap (raises minUtility).
-func (p *Phase2) readCandidateItemsetsParallel(hdb, bnf [][]int, candidates []StringPair, lbfw *bufio.Writer) (int, error) {
-	h := NewStringPairRedBlackTree()
+func (p *Phase2) readCandidateItemsetsParallel(hdb, bnf [][]int, candidates []datastructure.StringPair, lbfw *bufio.Writer) (int, error) {
+	h := datastructure.NewStringPairRedBlackTree()
 	numHU := 0
 
 	for _, sp := range candidates {
@@ -280,12 +282,12 @@ func (p *Phase2) initialization(hdb, bnf [][]int) {
 
 // updateHeap maintains a size-k multiset of (itemset string, exact utility); lifts minUtility
 // when k true HUIs are known (same logic as TKU Phase2 updateHeap).
-func (p *Phase2) updateHeap(nch *RedBlackTree[StringPair], hui string, utility int) {
+func (p *Phase2) updateHeap(nch *datastructure.RedBlackTree[datastructure.StringPair], hui string, utility int) {
 	if nch.Size() < p.theCurrentK {
-		nch.Add(StringPair{X: hui, Y: utility})
+		nch.Add(datastructure.StringPair{X: hui, Y: utility})
 	} else if nch.Size() >= p.theCurrentK {
 		if utility > p.minUtility {
-			nch.Add(StringPair{X: hui, Y: utility})
+			nch.Add(datastructure.StringPair{X: hui, Y: utility})
 			nch.PopMinimum()
 		}
 	}

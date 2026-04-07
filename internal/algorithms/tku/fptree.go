@@ -3,6 +3,8 @@ package tku
 import (
 	"bufio"
 	"strconv"
+
+	"hui-problem/internal/pkg/datastructure"
 )
 
 // TreeNode is a node in the UP-Tree / FP-Tree used by TKU.
@@ -36,15 +38,16 @@ func NewFPTree(algo *TKU) *FPTree {
 	}
 }
 
-func (t *FPTree) insPatternBase(tran []int, tranlen int, l1 []int, twu, ic, sumBNF int) {
+// insertConditionalPatternIntoTree inserts a conditional transaction into a projected UP-tree: node TWU is derived from path utility minus min-BNF terms (MIU × pathCount).
+func (t *FPTree) insertConditionalPatternIntoTree(itemIDs []int, numItems int, twuByItem []int, pathUtility, pathCount, sumMinBNF int) {
 	par := t.Root
-	for i := 0; i < tranlen; i++ {
-		target := tran[i]
+	for i := 0; i < numItems; i++ {
+		target := itemIDs[i]
 		cs := len(par.Children)
 		if cs == 0 {
-			m := twu - (sumBNF - t.algo.arrayMIU[target]*ic)
-			sumBNF = sumBNF - (t.algo.arrayMIU[target] * ic)
-			nNode := NewTreeNode(target, m, ic)
+			m := pathUtility - (sumMinBNF - t.algo.arrayMIU[target]*pathCount)
+			sumMinBNF = sumMinBNF - (t.algo.arrayMIU[target] * pathCount)
+			nNode := NewTreeNode(target, m, pathCount)
 			par.Children = append(par.Children, nNode)
 			nNode.Parent = par
 			if t.Header[target] == nil {
@@ -59,18 +62,18 @@ func (t *FPTree) insPatternBase(tran []int, tranlen int, l1 []int, twu, ic, sumB
 			for j := 0; j < cs; j++ {
 				comp := par.Children[j]
 				if target == comp.Item {
-					m := twu - (sumBNF - t.algo.arrayMIU[target]*ic)
-					sumBNF = sumBNF - t.algo.arrayMIU[target]*ic
+					m := pathUtility - (sumMinBNF - t.algo.arrayMIU[target]*pathCount)
+					sumMinBNF = sumMinBNF - t.algo.arrayMIU[target]*pathCount
 					comp.TWU += m
-					comp.Count += ic
+					comp.Count += pathCount
 					par = comp
 					done = true
 					break
 				}
-				if l1[target] > l1[comp.Item] {
-					m := twu - (sumBNF - t.algo.arrayMIU[target]*ic)
-					sumBNF = sumBNF - t.algo.arrayMIU[target]*ic
-					nNode := NewTreeNode(target, m, ic)
+				if twuByItem[target] > twuByItem[comp.Item] {
+					m := pathUtility - (sumMinBNF - t.algo.arrayMIU[target]*pathCount)
+					sumMinBNF = sumMinBNF - t.algo.arrayMIU[target]*pathCount
+					nNode := NewTreeNode(target, m, pathCount)
 					par.Children = insertChildAt(par.Children, j, nNode)
 					nNode.Parent = par
 					if t.Header[target] == nil {
@@ -83,10 +86,10 @@ func (t *FPTree) insPatternBase(tran []int, tranlen int, l1 []int, twu, ic, sumB
 					done = true
 					break
 				}
-				if l1[target] == l1[comp.Item] && target < comp.Item {
-					m := twu - (sumBNF - t.algo.arrayMIU[target]*ic)
-					sumBNF = sumBNF - t.algo.arrayMIU[target]*ic
-					nNode := NewTreeNode(target, m, ic)
+				if twuByItem[target] == twuByItem[comp.Item] && target < comp.Item {
+					m := pathUtility - (sumMinBNF - t.algo.arrayMIU[target]*pathCount)
+					sumMinBNF = sumMinBNF - t.algo.arrayMIU[target]*pathCount
+					nNode := NewTreeNode(target, m, pathCount)
 					par.Children = insertChildAt(par.Children, j, nNode)
 					nNode.Parent = par
 					if t.Header[target] == nil {
@@ -100,9 +103,9 @@ func (t *FPTree) insPatternBase(tran []int, tranlen int, l1 []int, twu, ic, sumB
 					break
 				}
 				if j == cs-1 {
-					m := twu - (sumBNF - t.algo.arrayMIU[target]*ic)
-					sumBNF = sumBNF - t.algo.arrayMIU[target]*ic
-					nNode := NewTreeNode(target, m, ic)
+					m := pathUtility - (sumMinBNF - t.algo.arrayMIU[target]*pathCount)
+					sumMinBNF = sumMinBNF - t.algo.arrayMIU[target]*pathCount
+					nNode := NewTreeNode(target, m, pathCount)
 					par.Children = append(par.Children, nNode)
 					nNode.Parent = par
 					if t.Header[target] == nil {
@@ -130,16 +133,17 @@ func insertChildAt(children []*TreeNode, idx int, n *TreeNode) []*TreeNode {
 	return children
 }
 
-func (t *FPTree) instrans3(tran []int, bran []string, tranlen, ic int, l1 []int, nodeCountHeap *RedBlackTree[int]) {
-	twu := 0
+// insertGlobalTransactionIntoUPTree inserts one filtered, TWU-sorted transaction into the global UP-tree: cumulative prefix utility labels nodes; NU heap raises minUtil.
+func (t *FPTree) insertGlobalTransactionIntoUPTree(itemIDs []int, utilityStrs []string, numItems, txnCount int, twuByItem []int, nodeCountHeap *datastructure.RedBlackTree[int]) {
+	cumUtility := 0
 	par := t.Root
-	for i := 0; i < tranlen; i++ {
-		u, _ := strconv.Atoi(bran[i])
-		twu += u
-		target := tran[i]
+	for i := 0; i < numItems; i++ {
+		u, _ := strconv.Atoi(utilityStrs[i])
+		cumUtility += u
+		target := itemIDs[i]
 		cs := len(par.Children)
 		if cs == 0 {
-			nNode := NewTreeNode(target, twu, ic)
+			nNode := NewTreeNode(target, cumUtility, txnCount)
 			par.Children = append(par.Children, nNode)
 			if float64(nNode.TWU) > t.algo.globalMinUtil {
 				t.algo.updateNodeCountHeap(nodeCountHeap, nNode.TWU)
@@ -157,17 +161,17 @@ func (t *FPTree) instrans3(tran []int, bran []string, tranlen, ic int, l1 []int,
 				comp := par.Children[j]
 				if target == comp.Item {
 					nodeCountHeap.Remove(comp.TWU)
-					t.algo.updateNodeCountHeap(nodeCountHeap, comp.TWU+twu)
-					comp.TWU += twu
-					comp.Count += ic
+					t.algo.updateNodeCountHeap(nodeCountHeap, comp.TWU+cumUtility)
+					comp.TWU += cumUtility
+					comp.Count += txnCount
 					par = comp
 					break
 				}
-				if l1[target] > l1[comp.Item] {
+				if twuByItem[target] > twuByItem[comp.Item] {
 					if float64(comp.TWU) > t.algo.globalMinUtil {
-						t.algo.updateNodeCountHeap(nodeCountHeap, twu)
+						t.algo.updateNodeCountHeap(nodeCountHeap, cumUtility)
 					}
-					nNode := NewTreeNode(target, twu, ic)
+					nNode := NewTreeNode(target, cumUtility, txnCount)
 					par.Children = insertChildAt(par.Children, j, nNode)
 					nNode.Parent = par
 					if t.Header[target] == nil {
@@ -179,11 +183,11 @@ func (t *FPTree) instrans3(tran []int, bran []string, tranlen, ic int, l1 []int,
 					par = nNode
 					break
 				}
-				if l1[target] == l1[comp.Item] && target < comp.Item {
+				if twuByItem[target] == twuByItem[comp.Item] && target < comp.Item {
 					if float64(comp.TWU) > t.algo.globalMinUtil {
-						t.algo.updateNodeCountHeap(nodeCountHeap, twu)
+						t.algo.updateNodeCountHeap(nodeCountHeap, cumUtility)
 					}
-					nNode := NewTreeNode(target, twu, ic)
+					nNode := NewTreeNode(target, cumUtility, txnCount)
 					par.Children = insertChildAt(par.Children, j, nNode)
 					nNode.Parent = par
 					if t.Header[target] == nil {
@@ -197,9 +201,9 @@ func (t *FPTree) instrans3(tran []int, bran []string, tranlen, ic int, l1 []int,
 				}
 				if j == cs-1 {
 					if float64(comp.TWU) > t.algo.globalMinUtil {
-						t.algo.updateNodeCountHeap(nodeCountHeap, twu)
+						t.algo.updateNodeCountHeap(nodeCountHeap, cumUtility)
 					}
-					nNode := NewTreeNode(target, twu, ic)
+					nNode := NewTreeNode(target, cumUtility, txnCount)
 					par.Children = append(par.Children, nNode)
 					nNode.Parent = par
 					if t.Header[target] == nil {
@@ -217,9 +221,11 @@ func (t *FPTree) instrans3(tran []int, bran []string, tranlen, ic int, l1 []int,
 }
 
 // UPGrowth runs TKU mining on the global tree (Java UPGrowth).
-func (t *FPTree) UPGrowth(tree2 *FPTree, flist2 []int, prefix string, w *bufio.Writer, isNodeCountHeap *RedBlackTree[int], lp1 []int) error {
+// For each header item: extract conditional pattern base (CPB), emit extensions with MAU/MIU estimates, build local tree, recurse with upGrowthMinBNF.
+func (t *FPTree) UPGrowth(tree2 *FPTree, flist2 []int, prefix string, w *bufio.Writer, isNodeCountHeap *datastructure.RedBlackTree[int], itemTWU []int) error {
 	for i := 0; i < len(flist2); i++ {
-		if float64(lp1[flist2[i]]) >= t.algo.globalMinUtil {
+		if float64(itemTWU[flist2[i]]) >= t.algo.globalMinUtil {
+			// Extend prefix with current header item; citem is the item being mined at this level.
 			var nprefix string
 			if prefix == "" {
 				nprefix = prefix + strconv.Itoa(flist2[i])
@@ -235,6 +241,7 @@ func (t *FPTree) UPGrowth(tree2 *FPTree, flist2 []int, prefix string, w *bufio.W
 			localF1 := make([]int, t.algo.itemCount)
 			localCount := make([]int, t.algo.itemCount)
 
+			// Walk the header chain for citem: collect prefix paths and aggregate local TWU/counts into conditional transactions (CPB).
 			for chlink != nil {
 				var path []int
 				cptr := chlink
@@ -253,6 +260,7 @@ func (t *FPTree) UPGrowth(tree2 *FPTree, flist2 []int, prefix string, w *bufio.W
 				chlink = chlink.HLink
 			}
 
+			// Prune local items below the threshold; for each surviving extension j, emit a candidate line if MAU bound passes; tighten heap with MIU bound.
 			localflist := make([]int, 0)
 			for j := 0; j < len(localF1); j++ {
 				if float64(localF1[j]) < t.algo.globalMinUtil {
@@ -283,25 +291,26 @@ func (t *FPTree) UPGrowth(tree2 *FPTree, flist2 []int, prefix string, w *bufio.W
 				}
 			}
 
+			// Project CPB rows into a conditional tree and recurse with the same UP-Growth logic on the local header list.
 			if len(cpb) > 0 {
 				cFptree := NewFPTree(t.algo)
 				for k := 0; k < len(cpb); k++ {
-					ltran := cpb[k]
+					cpbPath := cpb[k]
 					sumMinBNF := 0
-					tran := make([]int, len(ltran))
-					tranlen := 0
-					for h := 0; h < len(ltran); h++ {
-						it := ltran[h]
+					projItems := make([]int, len(cpbPath))
+					numProj := 0
+					for h := 0; h < len(cpbPath); h++ {
+						it := cpbPath[h]
 						if float64(localF1[it]) >= t.algo.globalMinUtil {
 							sumMinBNF += cpbc[k] * t.algo.arrayMIU[it]
-							tran[tranlen] = it
-							tranlen++
+							projItems[numProj] = it
+							numProj++
 						} else {
 							cpbw[k] -= cpbc[k] * t.algo.arrayMIU[it]
 						}
 					}
-					t.algo.sortTrans(tran, 0, tranlen, localF1)
-					cFptree.insPatternBase(tran, tranlen, localF1, cpbw[k], cpbc[k], sumMinBNF)
+					t.algo.sortItemsByDescendingTWU(projItems, 0, numProj, localF1)
+					cFptree.insertConditionalPatternIntoTree(projItems, numProj, localF1, cpbw[k], cpbc[k], sumMinBNF)
 				}
 				if err := cFptree.upGrowthMinBNF(cFptree, localflist, nprefix, w, isNodeCountHeap, localF1); err != nil {
 					return err
@@ -340,9 +349,10 @@ func splitFields(s string) []string {
 	return fields
 }
 
-func (t *FPTree) upGrowthMinBNF(tree2 *FPTree, flist2 []int, prefix string, w *bufio.Writer, isNodeCountHeap *RedBlackTree[int], lp1 []int) error {
+// upGrowthMinBNF recursively mines conditional UP-trees produced by insertConditionalPatternIntoTree (same control flow as UPGrowth, different path TWU semantics).
+func (t *FPTree) upGrowthMinBNF(tree2 *FPTree, flist2 []int, prefix string, w *bufio.Writer, isNodeCountHeap *datastructure.RedBlackTree[int], itemTWU []int) error {
 	for i := 0; i < len(flist2); i++ {
-		if float64(lp1[flist2[i]]) >= t.algo.globalMinUtil {
+		if float64(itemTWU[flist2[i]]) >= t.algo.globalMinUtil {
 			var nprefix string
 			if prefix == "" {
 				nprefix = prefix + strconv.Itoa(flist2[i])
@@ -409,22 +419,22 @@ func (t *FPTree) upGrowthMinBNF(tree2 *FPTree, flist2 []int, prefix string, w *b
 			if len(cpb) > 0 {
 				cFptree := NewFPTree(t.algo)
 				for k := 0; k < len(cpb); k++ {
-					ltran := cpb[k]
+					cpbPath := cpb[k]
 					sumMinBNF := 0
-					tran := make([]int, len(ltran))
-					tranlen := 0
-					for h := 0; h < len(ltran); h++ {
-						it := ltran[h]
+					projItems := make([]int, len(cpbPath))
+					numProj := 0
+					for h := 0; h < len(cpbPath); h++ {
+						it := cpbPath[h]
 						if float64(localF1[it]) >= t.algo.globalMinUtil {
 							sumMinBNF += cpbc[k] * t.algo.arrayMIU[it]
-							tran[tranlen] = it
-							tranlen++
+							projItems[numProj] = it
+							numProj++
 						} else {
 							cpbw[k] -= cpbc[k] * t.algo.arrayMIU[it]
 						}
 					}
-					t.algo.sortTrans(tran, 0, tranlen, localF1)
-					cFptree.insPatternBase(tran, tranlen, localF1, cpbw[k], cpbc[k], sumMinBNF)
+					t.algo.sortItemsByDescendingTWU(projItems, 0, numProj, localF1)
+					cFptree.insertConditionalPatternIntoTree(projItems, numProj, localF1, cpbw[k], cpbc[k], sumMinBNF)
 				}
 				if err := cFptree.upGrowthMinBNF(cFptree, localflist, nprefix, w, isNodeCountHeap, localF1); err != nil {
 					return err
@@ -435,7 +445,7 @@ func (t *FPTree) upGrowthMinBNF(tree2 *FPTree, flist2 []int, prefix string, w *b
 	return nil
 }
 
-// SumDescendent accumulates descendant counts into dsSumTable.
+// SumDescendent (DS pruning) adds each node's Count to dsSumTable[item] for the whole subtree rooted at cNode.
 func (t *FPTree) SumDescendent(cNode *TreeNode, dsSumTable []int) {
 	if cNode == nil {
 		return

@@ -6,6 +6,8 @@ package ptku
 import (
 	"strconv"
 	"sync"
+
+	"hui-problem/internal/pkg/datastructure"
 )
 
 // TreeNode is one node in the utility pattern tree (item, aggregated TWU on paths, count, links).
@@ -39,17 +41,16 @@ func NewFPTree(algo *PTKU) *FPTree {
 	}
 }
 
-// insPatternBase inserts a conditional pattern base path into a local FP-tree (UP-Growth subtree)
-// using MIU-based path utility (same recurrence as TKU Java insPatternBase).
-func (t *FPTree) insPatternBase(tran []int, tranlen int, l1 []int, twu, ic, sumBNF int) {
+// insertConditionalPatternIntoTree inserts a conditional pattern base path into a local UP-tree subtree (MIU-based path utility; same recurrence as TKU).
+func (t *FPTree) insertConditionalPatternIntoTree(itemIDs []int, numItems int, twuByItem []int, pathUtility, pathCount, sumMinBNF int) {
 	par := t.Root
-	for i := 0; i < tranlen; i++ {
-		target := tran[i]
+	for i := 0; i < numItems; i++ {
+		target := itemIDs[i]
 		cs := len(par.Children)
 		if cs == 0 {
-			m := twu - (sumBNF - t.algo.arrayMIU[target]*ic)
-			sumBNF = sumBNF - (t.algo.arrayMIU[target] * ic)
-			nNode := NewTreeNode(target, m, ic)
+			m := pathUtility - (sumMinBNF - t.algo.arrayMIU[target]*pathCount)
+			sumMinBNF = sumMinBNF - (t.algo.arrayMIU[target] * pathCount)
+			nNode := NewTreeNode(target, m, pathCount)
 			par.Children = append(par.Children, nNode)
 			nNode.Parent = par
 			if t.Header[target] == nil {
@@ -64,18 +65,18 @@ func (t *FPTree) insPatternBase(tran []int, tranlen int, l1 []int, twu, ic, sumB
 			for j := 0; j < cs; j++ {
 				comp := par.Children[j]
 				if target == comp.Item {
-					m := twu - (sumBNF - t.algo.arrayMIU[target]*ic)
-					sumBNF = sumBNF - t.algo.arrayMIU[target]*ic
+					m := pathUtility - (sumMinBNF - t.algo.arrayMIU[target]*pathCount)
+					sumMinBNF = sumMinBNF - t.algo.arrayMIU[target]*pathCount
 					comp.TWU += m
-					comp.Count += ic
+					comp.Count += pathCount
 					par = comp
 					done = true
 					break
 				}
-				if l1[target] > l1[comp.Item] {
-					m := twu - (sumBNF - t.algo.arrayMIU[target]*ic)
-					sumBNF = sumBNF - t.algo.arrayMIU[target]*ic
-					nNode := NewTreeNode(target, m, ic)
+				if twuByItem[target] > twuByItem[comp.Item] {
+					m := pathUtility - (sumMinBNF - t.algo.arrayMIU[target]*pathCount)
+					sumMinBNF = sumMinBNF - t.algo.arrayMIU[target]*pathCount
+					nNode := NewTreeNode(target, m, pathCount)
 					par.Children = insertChildAt(par.Children, j, nNode)
 					nNode.Parent = par
 					if t.Header[target] == nil {
@@ -88,10 +89,10 @@ func (t *FPTree) insPatternBase(tran []int, tranlen int, l1 []int, twu, ic, sumB
 					done = true
 					break
 				}
-				if l1[target] == l1[comp.Item] && target < comp.Item {
-					m := twu - (sumBNF - t.algo.arrayMIU[target]*ic)
-					sumBNF = sumBNF - t.algo.arrayMIU[target]*ic
-					nNode := NewTreeNode(target, m, ic)
+				if twuByItem[target] == twuByItem[comp.Item] && target < comp.Item {
+					m := pathUtility - (sumMinBNF - t.algo.arrayMIU[target]*pathCount)
+					sumMinBNF = sumMinBNF - t.algo.arrayMIU[target]*pathCount
+					nNode := NewTreeNode(target, m, pathCount)
 					par.Children = insertChildAt(par.Children, j, nNode)
 					nNode.Parent = par
 					if t.Header[target] == nil {
@@ -105,9 +106,9 @@ func (t *FPTree) insPatternBase(tran []int, tranlen int, l1 []int, twu, ic, sumB
 					break
 				}
 				if j == cs-1 {
-					m := twu - (sumBNF - t.algo.arrayMIU[target]*ic)
-					sumBNF = sumBNF - t.algo.arrayMIU[target]*ic
-					nNode := NewTreeNode(target, m, ic)
+					m := pathUtility - (sumMinBNF - t.algo.arrayMIU[target]*pathCount)
+					sumMinBNF = sumMinBNF - t.algo.arrayMIU[target]*pathCount
+					nNode := NewTreeNode(target, m, pathCount)
 					par.Children = append(par.Children, nNode)
 					nNode.Parent = par
 					if t.Header[target] == nil {
@@ -134,19 +135,18 @@ func insertChildAt(children []*TreeNode, idx int, n *TreeNode) []*TreeNode {
 	return children
 }
 
-// instrans3 inserts one filtered, sorted transaction into the global UP-Tree: prefix utilities on nodes,
-// header links, and NU threshold raises via nodeCountHeap + TryUpdateWithHeap when path TWU exceeds border.
-func (t *FPTree) instrans3(tran []int, bran []string, tranlen, ic int, l1 []int, nodeCountHeap *RedBlackTree[int]) {
-	twu := 0
+// insertGlobalTransactionIntoUPTree inserts one filtered, TWU-sorted transaction: prefix utilities, header links, NU via nodeCountHeap + TryUpdateWithHeap.
+func (t *FPTree) insertGlobalTransactionIntoUPTree(itemIDs []int, utilityStrs []string, numItems, txnCount int, twuByItem []int, nodeCountHeap *datastructure.RedBlackTree[int]) {
+	cumUtility := 0
 	par := t.Root
 	gmu := t.algo.threshold.MinUtil()
-	for i := 0; i < tranlen; i++ {
-		u, _ := strconv.Atoi(bran[i])
-		twu += u
-		target := tran[i]
+	for i := 0; i < numItems; i++ {
+		u, _ := strconv.Atoi(utilityStrs[i])
+		cumUtility += u
+		target := itemIDs[i]
 		cs := len(par.Children)
 		if cs == 0 {
-			nNode := NewTreeNode(target, twu, ic)
+			nNode := NewTreeNode(target, cumUtility, txnCount)
 			par.Children = append(par.Children, nNode)
 			if float64(nNode.TWU) > gmu {
 				t.algo.threshold.TryUpdateWithHeap(nodeCountHeap, nNode.TWU)
@@ -165,19 +165,19 @@ func (t *FPTree) instrans3(tran []int, bran []string, tranlen, ic int, l1 []int,
 				comp := par.Children[j]
 				if target == comp.Item {
 					nodeCountHeap.Remove(comp.TWU)
-					t.algo.threshold.TryUpdateWithHeap(nodeCountHeap, comp.TWU+twu)
+					t.algo.threshold.TryUpdateWithHeap(nodeCountHeap, comp.TWU+cumUtility)
 					gmu = t.algo.threshold.MinUtil()
-					comp.TWU += twu
-					comp.Count += ic
+					comp.TWU += cumUtility
+					comp.Count += txnCount
 					par = comp
 					break
 				}
-				if l1[target] > l1[comp.Item] {
+				if twuByItem[target] > twuByItem[comp.Item] {
 					if float64(comp.TWU) > gmu {
-						t.algo.threshold.TryUpdateWithHeap(nodeCountHeap, twu)
+						t.algo.threshold.TryUpdateWithHeap(nodeCountHeap, cumUtility)
 						gmu = t.algo.threshold.MinUtil()
 					}
-					nNode := NewTreeNode(target, twu, ic)
+					nNode := NewTreeNode(target, cumUtility, txnCount)
 					par.Children = insertChildAt(par.Children, j, nNode)
 					nNode.Parent = par
 					if t.Header[target] == nil {
@@ -189,12 +189,12 @@ func (t *FPTree) instrans3(tran []int, bran []string, tranlen, ic int, l1 []int,
 					par = nNode
 					break
 				}
-				if l1[target] == l1[comp.Item] && target < comp.Item {
+				if twuByItem[target] == twuByItem[comp.Item] && target < comp.Item {
 					if float64(comp.TWU) > gmu {
-						t.algo.threshold.TryUpdateWithHeap(nodeCountHeap, twu)
+						t.algo.threshold.TryUpdateWithHeap(nodeCountHeap, cumUtility)
 						gmu = t.algo.threshold.MinUtil()
 					}
-					nNode := NewTreeNode(target, twu, ic)
+					nNode := NewTreeNode(target, cumUtility, txnCount)
 					par.Children = insertChildAt(par.Children, j, nNode)
 					nNode.Parent = par
 					if t.Header[target] == nil {
@@ -208,10 +208,10 @@ func (t *FPTree) instrans3(tran []int, bran []string, tranlen, ic int, l1 []int,
 				}
 				if j == cs-1 {
 					if float64(comp.TWU) > gmu {
-						t.algo.threshold.TryUpdateWithHeap(nodeCountHeap, twu)
+						t.algo.threshold.TryUpdateWithHeap(nodeCountHeap, cumUtility)
 						gmu = t.algo.threshold.MinUtil()
 					}
-					nNode := NewTreeNode(target, twu, ic)
+					nNode := NewTreeNode(target, cumUtility, txnCount)
 					par.Children = append(par.Children, nNode)
 					nNode.Parent = par
 					if t.Header[target] == nil {
@@ -231,10 +231,10 @@ func (t *FPTree) instrans3(tran []int, bran []string, tranlen, ic int, l1 []int,
 // candidateSink buffers (itemset string, estimated utility) from concurrent UPGrowth workers.
 type candidateSink struct {
 	mu    sync.Mutex
-	items []StringPair
+	items []datastructure.StringPair
 }
 
-func (s *candidateSink) add(p StringPair) {
+func (s *candidateSink) add(p datastructure.StringPair) {
 	s.mu.Lock()
 	s.items = append(s.items, p)
 	s.mu.Unlock()
@@ -243,21 +243,21 @@ func (s *candidateSink) add(p StringPair) {
 // ParallelUPGrowth implements Fork/Join at the root UPGrowth loop: for each eligible item in flist2,
 // spawn a worker that runs upGrowthOneTopItem with its own MC heap. The read-only global tree2 and
 // header links are shared; writes go to sink and SafeHeap only.
-func (t *FPTree) ParallelUPGrowth(tree2 *FPTree, flist2 []int, prefix string, lp1 []int, sink *candidateSink) error {
+func (t *FPTree) ParallelUPGrowth(tree2 *FPTree, flist2 []int, prefix string, itemTWU []int, sink *candidateSink) error {
 	var wg sync.WaitGroup
 	var firstErr error
 	var errMu sync.Mutex
 
 	for i := 0; i < len(flist2); i++ {
-		if float64(lp1[flist2[i]]) < t.algo.threshold.MinUtil() {
+		if float64(itemTWU[flist2[i]]) < t.algo.threshold.MinUtil() {
 			continue
 		}
 		idx := i
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			isHeap := NewIntRedBlackTree()
-			if err := t.upGrowthOneTopItem(tree2, flist2, prefix, idx, isHeap, lp1, sink); err != nil {
+			isHeap := datastructure.NewIntRedBlackTree()
+			if err := t.upGrowthOneTopItem(tree2, flist2, prefix, idx, isHeap, itemTWU, sink); err != nil {
 				errMu.Lock()
 				if firstErr == nil {
 					firstErr = err
@@ -273,8 +273,8 @@ func (t *FPTree) ParallelUPGrowth(tree2 *FPTree, flist2 []int, prefix string, lp
 // upGrowthOneTopItem runs the body of UPGrowth for a single index i in flist2: build conditional
 // pattern base from header links, emit MAU/MIU-qualified extensions to sink, build local tree and recurse
 // upGrowthMinBNF. Matches one iteration of TKU UPGrowth outer loop.
-func (t *FPTree) upGrowthOneTopItem(tree2 *FPTree, flist2 []int, prefix string, i int, isNodeCountHeap *RedBlackTree[int], lp1 []int, sink *candidateSink) error {
-	if float64(lp1[flist2[i]]) < t.algo.threshold.MinUtil() {
+func (t *FPTree) upGrowthOneTopItem(tree2 *FPTree, flist2 []int, prefix string, i int, isNodeCountHeap *datastructure.RedBlackTree[int], itemTWU []int, sink *candidateSink) error {
+	if float64(itemTWU[flist2[i]]) < t.algo.threshold.MinUtil() {
 		return nil
 	}
 	var nprefix string
@@ -329,7 +329,7 @@ func (t *FPTree) upGrowthOneTopItem(tree2 *FPTree, flist2 []int, prefix string, 
 				mau := sumMau * localCount[j]
 				if float64(mau) >= gmu {
 					miu := sumMiu * localCount[j]
-					sink.add(StringPair{X: nprefix + " " + strconv.Itoa(j), Y: localF1[j]})
+					sink.add(datastructure.StringPair{X: nprefix + " " + strconv.Itoa(j), Y: localF1[j]})
 					if float64(miu) > gmu {
 						t.algo.threshold.TryUpdateWithHeap(isNodeCountHeap, miu)
 						gmu = t.algo.threshold.MinUtil()
@@ -342,23 +342,23 @@ func (t *FPTree) upGrowthOneTopItem(tree2 *FPTree, flist2 []int, prefix string, 
 	if len(cpb) > 0 {
 		cFptree := NewFPTree(t.algo)
 		for k := 0; k < len(cpb); k++ {
-			ltran := cpb[k]
+			cpbPath := cpb[k]
 			sumMinBNF := 0
-			tran := make([]int, len(ltran))
-			tranlen := 0
+			projItems := make([]int, len(cpbPath))
+			numProj := 0
 			gmu = t.algo.threshold.MinUtil()
-			for h := 0; h < len(ltran); h++ {
-				it := ltran[h]
+			for h := 0; h < len(cpbPath); h++ {
+				it := cpbPath[h]
 				if float64(localF1[it]) >= gmu {
 					sumMinBNF += cpbc[k] * t.algo.arrayMIU[it]
-					tran[tranlen] = it
-					tranlen++
+					projItems[numProj] = it
+					numProj++
 				} else {
 					cpbw[k] -= cpbc[k] * t.algo.arrayMIU[it]
 				}
 			}
-			t.algo.sortTrans(tran, 0, tranlen, localF1)
-			cFptree.insPatternBase(tran, tranlen, localF1, cpbw[k], cpbc[k], sumMinBNF)
+			t.algo.sortItemsByDescendingTWU(projItems, 0, numProj, localF1)
+			cFptree.insertConditionalPatternIntoTree(projItems, numProj, localF1, cpbw[k], cpbc[k], sumMinBNF)
 		}
 		if err := cFptree.upGrowthMinBNF(cFptree, localflist, nprefix, isNodeCountHeap, localF1, sink); err != nil {
 			return err
@@ -397,10 +397,10 @@ func splitFields(s string) []string {
 
 // upGrowthMinBNF is the recursive UPGrowth kernel (sequential inner loops), same structure as TKU:
 // for each extension item, scan linked nodes, emit candidates, build conditional trees and recurse.
-func (t *FPTree) upGrowthMinBNF(tree2 *FPTree, flist2 []int, prefix string, isNodeCountHeap *RedBlackTree[int], lp1 []int, sink *candidateSink) error {
+func (t *FPTree) upGrowthMinBNF(tree2 *FPTree, flist2 []int, prefix string, isNodeCountHeap *datastructure.RedBlackTree[int], itemTWU []int, sink *candidateSink) error {
 	for i := 0; i < len(flist2); i++ {
 		gmu := t.algo.threshold.MinUtil()
-		if float64(lp1[flist2[i]]) < gmu {
+		if float64(itemTWU[flist2[i]]) < gmu {
 			continue
 		}
 		var nprefix string
@@ -455,7 +455,7 @@ func (t *FPTree) upGrowthMinBNF(tree2 *FPTree, flist2 []int, prefix string, isNo
 					mau := sumMau * localCount[j]
 					if float64(mau) >= gmu {
 						miu := sumMiu * localCount[j]
-						sink.add(StringPair{X: nprefix + " " + strconv.Itoa(j), Y: localF1[j]})
+						sink.add(datastructure.StringPair{X: nprefix + " " + strconv.Itoa(j), Y: localF1[j]})
 						if float64(miu) > gmu {
 							t.algo.threshold.TryUpdateWithHeap(isNodeCountHeap, miu)
 							gmu = t.algo.threshold.MinUtil()
@@ -468,23 +468,23 @@ func (t *FPTree) upGrowthMinBNF(tree2 *FPTree, flist2 []int, prefix string, isNo
 		if len(cpb) > 0 {
 			cFptree := NewFPTree(t.algo)
 			for k := 0; k < len(cpb); k++ {
-				ltran := cpb[k]
+				cpbPath := cpb[k]
 				sumMinBNF := 0
-				tran := make([]int, len(ltran))
-				tranlen := 0
+				projItems := make([]int, len(cpbPath))
+				numProj := 0
 				gmu = t.algo.threshold.MinUtil()
-				for h := 0; h < len(ltran); h++ {
-					it := ltran[h]
+				for h := 0; h < len(cpbPath); h++ {
+					it := cpbPath[h]
 					if float64(localF1[it]) >= gmu {
 						sumMinBNF += cpbc[k] * t.algo.arrayMIU[it]
-						tran[tranlen] = it
-						tranlen++
+						projItems[numProj] = it
+						numProj++
 					} else {
 						cpbw[k] -= cpbc[k] * t.algo.arrayMIU[it]
 					}
 				}
-				t.algo.sortTrans(tran, 0, tranlen, localF1)
-				cFptree.insPatternBase(tran, tranlen, localF1, cpbw[k], cpbc[k], sumMinBNF)
+				t.algo.sortItemsByDescendingTWU(projItems, 0, numProj, localF1)
+				cFptree.insertConditionalPatternIntoTree(projItems, numProj, localF1, cpbw[k], cpbc[k], sumMinBNF)
 			}
 			if err := cFptree.upGrowthMinBNF(cFptree, localflist, nprefix, isNodeCountHeap, localF1, sink); err != nil {
 				return err

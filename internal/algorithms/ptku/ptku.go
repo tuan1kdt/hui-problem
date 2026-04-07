@@ -16,6 +16,10 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"hui-problem/internal/pkg/datastructure"
+	"hui-problem/internal/pkg/dbinfo"
+	"hui-problem/internal/pkg/memory"
 )
 
 // parsedTx is one parsed line of the utility database (SPMF: items : TU : utilities).
@@ -43,7 +47,6 @@ type PTKU struct {
 
 	totalTime    float64
 	patternCount int
-	maxMemoryMB  float64
 }
 
 // NewPTKU creates a new PTKU miner with default worker count = NumCPU.
@@ -53,7 +56,7 @@ func NewPTKU() *PTKU {
 
 // RunAlgorithm executes the full PTKU pipeline (Phase 1, then sort, then Phase 2).
 //
-// Step 0: DatabaseInfo — max item id and transaction count.
+// Step 0: dbinfo.DatabaseMetadata — max item id and transaction count.
 // Step 1: loadAllTransactions — parse file into []parsedTx for parallel Phase 1.
 // Step 2: parallelPreEvaluation — MapReduce TWU/MIU/MAU and PE matrix; merge; PE initial minUtil.
 // Step 3: NewSafeHeap + SetMinUtil — shared border for all strategies.
@@ -69,13 +72,13 @@ func (a *PTKU) RunAlgorithm(inputFile, outputFile string, k int) error {
 		a.Workers = 1
 	}
 
-	a.maxMemoryMB = 0
-	a.sampleMemory()
+	memory.Reset()
+	memory.Sample()
 	start := time.Now()
 
 	// Step 0: one pass for |D|, max item id (line count includes blanks in DBSize like TKU).
-	tool := NewDatabaseInfo(inputFile)
-	if err := tool.RunCalculate(); err != nil {
+	tool, err := dbinfo.New(inputFile)
+	if err != nil {
 		return err
 	}
 
@@ -110,7 +113,7 @@ func (a *PTKU) RunAlgorithm(inputFile, outputFile string, k int) error {
 	}
 
 	// Step 5: MD — MIU of descendants under each root child branch.
-	dsHeap := NewIntRedBlackTree()
+	dsHeap := datastructure.NewIntRedBlackTree()
 	for i := 0; i < len(tree.Root.Children); i++ {
 		sumDS := make([]int, a.itemCount)
 		dsItem := tree.Root.Children[i].Item
@@ -133,17 +136,17 @@ func (a *PTKU) RunAlgorithm(inputFile, outputFile string, k int) error {
 	// Step 8: 1-itemsets as candidates (TWU as estimated utility, same as TKU).
 	for i := 0; i < len(a.arrayTWUItems); i++ {
 		if float64(a.arrayTWUItems[i]) >= a.threshold.MinUtil() {
-			sink.add(StringPair{X: strconv.Itoa(i), Y: a.arrayTWUItems[i]})
+			sink.add(datastructure.StringPair{X: strconv.Itoa(i), Y: a.arrayTWUItems[i]})
 		}
 	}
 
 	// Step 9: SE — verify stronger candidates first in Phase 2.
 	candidates := sink.items
 	sort.Slice(candidates, func(i, j int) bool {
-		return CompareStringPair(candidates[i], candidates[j]) > 0
+		return datastructure.CompareStringPair(candidates[i], candidates[j]) > 0
 	})
 
-	a.sampleMemory()
+	memory.Sample()
 
 	// Step 10: exact utilities; parallel per-candidate transaction partitioning inside Phase2.
 	minUtil := int(a.threshold.MinUtil())
@@ -153,18 +156,9 @@ func (a *PTKU) RunAlgorithm(inputFile, outputFile string, k int) error {
 	}
 	a.patternCount = phase2.NumberOfTopKHUIs()
 
-	a.sampleMemory()
+	memory.Sample()
 	a.totalTime = time.Since(start).Seconds()
 	return nil
-}
-
-func (a *PTKU) sampleMemory() {
-	var ms runtime.MemStats
-	runtime.ReadMemStats(&ms)
-	used := float64(ms.Alloc) / (1024 * 1024)
-	if used > a.maxMemoryMB {
-		a.maxMemoryMB = used
-	}
 }
 
 // PrintStats prints execution statistics (SPMF-style).
@@ -172,7 +166,7 @@ func (a *PTKU) PrintStats() {
 	fmt.Println("=============  PTKU (Go)  =============")
 	fmt.Println(" Total execution time :", a.totalTime, "s")
 	fmt.Println(" Number of top-k high utility patterns :", a.patternCount)
-	fmt.Println(" Max memory usage (approx) :", a.maxMemoryMB, "MB")
+	fmt.Println(" Max memory usage (approx) :", memory.MaxMB(), "MB")
 	fmt.Println(" Workers :", a.Workers)
 	fmt.Println("===================================================")
 }
@@ -242,7 +236,7 @@ func (a *PTKU) parallelPreEvaluation(
 		twu []int
 		miu []int
 		mau []int
-		tm  *TriangularMatrix
+		tm  *datastructure.TriangularMatrix
 		err error
 	}
 	partials := make([]partial, w)
@@ -264,7 +258,7 @@ func (a *PTKU) parallelPreEvaluation(
 			twu := make([]int, numItem)
 			miu := make([]int, numItem)
 			mau := make([]int, numItem)
-			tm := NewTriangularMatrix(numItem)
+			tm := datastructure.NewTriangularMatrix(numItem)
 			for _, tx := range txs[start:end] {
 				if len(tx.items) == 0 {
 					continue
@@ -318,7 +312,7 @@ func (a *PTKU) parallelPreEvaluation(
 	}
 
 	// Reduce: sum PE matrix cells from all workers.
-	tmMerged := NewTriangularMatrix(numItem)
+	tmMerged := datastructure.NewTriangularMatrix(numItem)
 	for pi := range partials {
 		if partials[pi].tm == nil {
 			continue
@@ -353,7 +347,7 @@ func mergeMAU(dst, src []int, i int) {
 }
 
 // mergeTriangular adds src's PE counts into dst (same dimensions).
-func mergeTriangular(dst, src *TriangularMatrix, nItem int) {
+func mergeTriangular(dst, src *datastructure.TriangularMatrix, nItem int) {
 	for i := 0; i < nItem; i++ {
 		for j := 0; j < len(dst.Matrix[i]); j++ {
 			dst.Matrix[i][j] += src.Matrix[i][j]
@@ -378,7 +372,7 @@ func (h *intMinHeap) Pop() any {
 }
 
 // getInitialUtility finds the k-th largest non-zero entry in the PE matrix (min-heap of size k).
-func (a *PTKU) getInitialUtility(tm *TriangularMatrix, nItem, k int) float64 {
+func (a *PTKU) getInitialUtility(tm *datastructure.TriangularMatrix, nItem, k int) float64 {
 	h := &intMinHeap{}
 	heap.Init(h)
 
@@ -405,29 +399,29 @@ func (a *PTKU) getInitialUtility(tm *TriangularMatrix, nItem, k int) float64 {
 
 // getUlist returns items eligible for UPGrowth: positive TWU and TWU ≥ current minUtil border,
 // sorted by descending TWU (tie-break by item id) via insertItem.
-func (a *PTKU) getUlist(p1 []int) []int {
+func (a *PTKU) getUlist(twuByItem []int) []int {
 	list := make([]int, 0)
 	gmu := a.threshold.MinUtil()
-	for i := 0; i < len(p1); i++ {
-		if p1[i] > 0 && float64(p1[i]) >= gmu {
-			a.insertItem(&list, i, p1)
+	for i := 0; i < len(twuByItem); i++ {
+		if twuByItem[i] > 0 && float64(twuByItem[i]) >= gmu {
+			a.insertItem(&list, i, twuByItem)
 		}
 	}
 	return list
 }
 
-// insertItem maintains list in descending order by order[] (TWU), then ascending id tie-break.
-func (a *PTKU) insertItem(list *[]int, target int, order []int) {
+// insertItem maintains list in descending order by twuByItem (TWU), then ascending id tie-break.
+func (a *PTKU) insertItem(list *[]int, target int, twuByItem []int) {
 	if len(*list) == 0 {
 		*list = append(*list, target)
 		return
 	}
 	for i := 0; i < len(*list); i++ {
-		if order[target] > order[(*list)[i]] {
+		if twuByItem[target] > twuByItem[(*list)[i]] {
 			*list = append((*list)[:i], append([]int{target}, (*list)[i:]...)...)
 			return
 		}
-		if order[target] == order[(*list)[i]] && target < (*list)[i] {
+		if twuByItem[target] == twuByItem[(*list)[i]] && target < (*list)[i] {
 			*list = append((*list)[:i], append([]int{target}, (*list)[i:]...)...)
 			return
 		}
@@ -438,58 +432,58 @@ func (a *PTKU) insertItem(list *[]int, target int, order []int) {
 	}
 }
 
-// sortTrans bubble-sorts item ids in tran[pre:tranlen] by descending TWU p1[] (SPMF TKU order).
-func (a *PTKU) sortTrans(tran []int, pre, tranlen int, p1 []int) {
-	for i := pre; i < tranlen-1; i++ {
-		for j := pre; j < tranlen-1; j++ {
-			if p1[tran[j]] < p1[tran[j+1]] {
-				tran[j], tran[j+1] = tran[j+1], tran[j]
-			} else if p1[tran[j]] == p1[tran[j+1]] && tran[j] > tran[j+1] {
-				tran[j], tran[j+1] = tran[j+1], tran[j]
+// sortItemsByDescendingTWU bubble-sorts itemIDs[start:length] by descending TWU (twuByItem), tie-break smaller id first (SPMF TKU order).
+func (a *PTKU) sortItemsByDescendingTWU(itemIDs []int, start, length int, twuByItem []int) {
+	for i := start; i < length-1; i++ {
+		for j := start; j < length-1; j++ {
+			if twuByItem[itemIDs[j]] < twuByItem[itemIDs[j+1]] {
+				itemIDs[j], itemIDs[j+1] = itemIDs[j+1], itemIDs[j]
+			} else if twuByItem[itemIDs[j]] == twuByItem[itemIDs[j+1]] && itemIDs[j] > itemIDs[j+1] {
+				itemIDs[j], itemIDs[j+1] = itemIDs[j+1], itemIDs[j]
 			}
 		}
 	}
 }
 
-// sortTrans2 same as sortTrans but permutes parallel utility strings bran alongside tran.
-func (a *PTKU) sortTrans2(tran []int, bran []string, pre, tranlen int, p1 []int) {
-	for i := pre; i < tranlen-1; i++ {
-		for j := pre; j < tranlen-1; j++ {
-			if p1[tran[j]] < p1[tran[j+1]] {
-				tran[j], tran[j+1] = tran[j+1], tran[j]
-				bran[j], bran[j+1] = bran[j+1], bran[j]
-			} else if p1[tran[j]] == p1[tran[j+1]] && tran[j] > tran[j+1] {
-				tran[j], tran[j+1] = tran[j+1], tran[j]
-				bran[j], bran[j+1] = bran[j+1], bran[j]
+// sortItemsAndUtilitiesByDescendingTWU is sortItemsByDescendingTWU but also permutes utilityStrs in parallel with itemIDs.
+func (a *PTKU) sortItemsAndUtilitiesByDescendingTWU(itemIDs []int, utilityStrs []string, start, length int, twuByItem []int) {
+	for i := start; i < length-1; i++ {
+		for j := start; j < length-1; j++ {
+			if twuByItem[itemIDs[j]] < twuByItem[itemIDs[j+1]] {
+				itemIDs[j], itemIDs[j+1] = itemIDs[j+1], itemIDs[j]
+				utilityStrs[j], utilityStrs[j+1] = utilityStrs[j+1], utilityStrs[j]
+			} else if twuByItem[itemIDs[j]] == twuByItem[itemIDs[j+1]] && itemIDs[j] > itemIDs[j+1] {
+				itemIDs[j], itemIDs[j+1] = itemIDs[j+1], itemIDs[j]
+				utilityStrs[j], utilityStrs[j+1] = utilityStrs[j+1], utilityStrs[j]
 			}
 		}
 	}
 }
 
 // buildUPTree performs TKU's second database pass: drop items with TWU below border, sort each
-// transaction by global TWU order, insert into the UP-Tree (instrans3), and raise border via NU
+// transaction by global TWU order, insert into the UP-tree, and raise border via NU
 // using nodeCountHeap + TryUpdateWithHeap. Runs sequentially on the shared tree structure.
-func (a *PTKU) buildUPTree(p1 []int, txs []parsedTx) (*FPTree, error) {
-	nodeCountHeap := NewIntRedBlackTree()
+func (a *PTKU) buildUPTree(itemTWU []int, txs []parsedTx) (*FPTree, error) {
+	nodeCountHeap := datastructure.NewIntRedBlackTree()
 	tree := NewFPTree(a)
 
 	for _, tx := range txs {
-		tran := make([]int, len(tx.items))
-		bran2 := make([]string, len(tx.utils))
-		tranlen := 0
+		filteredItems := make([]int, len(tx.items))
+		utilityStrs := make([]string, len(tx.utils))
+		numFiltered := 0
 		gmu := a.threshold.MinUtil()
 		for m := 0; m < len(tx.items); m++ {
 			id := tx.items[m]
-			if float64(p1[id]) >= gmu {
-				bran2[tranlen] = strconv.Itoa(tx.utils[m])
-				tran[tranlen] = id
-				tranlen++
+			if float64(itemTWU[id]) >= gmu {
+				utilityStrs[numFiltered] = strconv.Itoa(tx.utils[m])
+				filteredItems[numFiltered] = id
+				numFiltered++
 			}
 		}
-		a.sortTrans2(tran, bran2, 0, tranlen, p1)
-		tree.instrans3(tran, bran2, tranlen, 1, p1, nodeCountHeap)
+		a.sortItemsAndUtilitiesByDescendingTWU(filteredItems, utilityStrs, 0, numFiltered, itemTWU)
+		tree.insertGlobalTransactionIntoUPTree(filteredItems, utilityStrs, numFiltered, 1, itemTWU, nodeCountHeap)
 	}
 
-	a.sampleMemory()
+	memory.Sample()
 	return tree, nil
 }
