@@ -2,7 +2,7 @@
 
 This repository is a **Go** toolkit for **high-utility itemset mining**: finding itemsets whose total utility in a transaction database is among the highest, without fixing a minimum utility threshold in advance.
 
-The first algorithm provided is **TKU** (Top-K High Utility itemsets), implemented in the [`tku`](tku/) package and exposed through the [`hui-problem`](cmd/hui-problem/) CLI.
+The first algorithm provided is **TKU** (Top-K High Utility itemsets), implemented in the [`tku`](internal/algorithm/tku/) package and exposed through the [`hui-problem`](cmd/hui-problem/) CLI.
 
 ---
 

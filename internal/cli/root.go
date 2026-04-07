@@ -23,6 +23,7 @@ func NewRootCmd() *cobra.Command {
 		Long:  "CLI for high-utility pattern mining algorithms (TKU, TKO, and more).",
 	}
 	root.AddCommand(newTKUCmd())
+	root.AddCommand(newPTKUCmd())
 	root.AddCommand(newTKOCmd())
 	return root
 }

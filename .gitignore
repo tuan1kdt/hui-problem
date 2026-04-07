@@ -1,3 +1,41 @@
-/reference/
-out*.txt
-hui-problem
+# Go build artifacts
+/cmd/hui-problem/hui-problem
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Go test artifacts
+*.test
+*.out
+
+# Go coverage files
+*.cover
+coverage.txt
+
+# Dependency directories
+vendor/
+
+# IDE and editor configurations
+.idea/
+.vscode/
+.cursor/
+
+# LaTeX build artifacts
+*.aux
+*.log
+*.out
+*.toc
+*.bbl
+*.blg
+*.synctex.gz
+*.fdb_latexmk
+*.fls
+
+# Algorithm output files
+output.txt
+
+# OS-specific files
+.DS_Store
+Thumbs.db

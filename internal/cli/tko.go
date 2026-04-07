@@ -3,9 +3,9 @@ package cli
 import (
 	"fmt"
 
-	"github.com/spf13/cobra"
+	"hui-problem/internal/algorithms/tko"
 
-	"hui-problem/tko"
+	"github.com/spf13/cobra"
 )
 
 func newTKOCmd() *cobra.Command {

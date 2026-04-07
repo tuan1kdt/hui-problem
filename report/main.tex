@@ -1,0 +1,779 @@
+% Midterm Essay: Mining Top-K High Utility Itemsets from Massive Datasets
+% LLNCS format - Springer
+\documentclass[runningheads]{llncs}
+
+\usepackage[T1]{fontenc}
+\usepackage{graphicx}
+\usepackage{amsmath,amssymb}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{float}
+
+\algnewcommand\algorithmicinput{\textbf{Input:}}
+\algnewcommand\Input{\item[\algorithmicinput]}
+\algnewcommand\algorithmicoutput{\textbf{Output:}}
+\algnewcommand\Output{\item[\algorithmicoutput]}
+
+\begin{document}
+
+\title{A Comparative Study of Three Algorithms for Mining Top-K High Utility Itemsets from Massive Datasets with Parallelism Analysis}
+
+\titlerunning{Top-K HUI Mining: Comparison \& Parallelism}
+
+\author{Le Anh Tuan, Ngo Hoang Dao}
+
+\authorrunning{L. A. Tuan}
+
+\institute{Ton Duc Thang University (TDTU), Ho Chi Minh City, Vietnam\\
+\email{252805005@student.tdtu.edu.vn}}
+
+\maketitle
+
+\begin{abstract}
+High Utility Itemset Mining (HUIM) is a fundamental task in data mining that discovers itemsets yielding high profit from transactional databases. Unlike traditional frequent itemset mining, HUIM considers both the quantity and unit profit of items, making it significantly more challenging due to the loss of the downward closure property. This paper presents a comparative study of three algorithms for mining top-$k$ high utility itemsets: \textbf{TKU} (two-phase, UP-Tree-based), \textbf{TKO} (one-phase, utility-list-based), and \textbf{THUI} (one-phase, utility-list-based with LIU matrix). We analyze the theoretical foundations, map each algorithmic step to its corresponding code implementation in the SPMF library, and present experimental results comparing runtime, memory consumption, and scalability. Furthermore, we identify parallelization opportunities in each algorithm using techniques such as MapReduce and Fork/Join, and propose concrete strategies for improving performance on massive datasets.
+
+\keywords{High Utility Itemset Mining \and Top-K Mining \and MapReduce \and Fork/Join \and Parallelism \and SPMF \and Massive Datasets}
+\end{abstract}
+
+%=======================================================================
+\section{Introduction}
+\label{sec:intro}
+%=======================================================================
+
+Traditional frequent itemset mining (FIM) assumes all items have equal importance and uses a binary model (present or absent). However, in real-world retail analytics, items have different unit profits and appear in varying quantities. \textbf{High Utility Itemset Mining (HUIM)}~\cite{ref_hui_survey} addresses this limitation by assigning external utilities (unit profit) and internal utilities (purchase quantity) to items.
+
+A major challenge in HUIM is setting the minimum utility threshold (\texttt{min\_util}). Setting it too low produces an overwhelming number of results; setting it too high yields none. The \textbf{top-$k$} formulation~\cite{ref_tku_paper} elegantly solves this by asking the user to specify only the desired number of results $k$, while the algorithm automatically determines the appropriate threshold.
+
+In this paper, we study and compare three representative algorithms:
+\begin{enumerate}
+    \item \textbf{TKU}~\cite{ref_tku_paper}: A two-phase algorithm using UP-Tree with five threshold-raising strategies (PE, NU, MD, MC, SE).
+    \item \textbf{TKO}~\cite{ref_tku_paper}: A one-phase algorithm using utility-lists with strategies RUC, RUZ, and EPB.
+    \item \textbf{THUI}~\cite{ref_thui}: A one-phase algorithm using utility-lists enhanced with a Leaf Itemset Utility (LIU) matrix for more effective threshold raising.
+\end{enumerate}
+
+All three algorithms aim to mine top-$k$ high utility itemsets but employ fundamentally different data structures and pruning strategies. The remainder of this paper is organized as follows: Section~\ref{sec:prelim} defines the problem formally. Section~\ref{sec:algorithms} details each algorithm with code-to-theory mapping. Section~\ref{sec:comparison} presents experimental comparisons. Section~\ref{sec:parallel} analyzes parallelization opportunities. Section~\ref{sec:conclusion} concludes.
+
+%=======================================================================
+\section{Preliminaries and Problem Definition}
+\label{sec:prelim}
+%=======================================================================
+
+\subsection{Basic Definitions}
+
+Let $I = \{I_1, I_2, \ldots, I_m\}$ be a set of distinct items and $D = \{T_1, T_2, \ldots, T_n\}$ be a transactional database. Each transaction $T_r \in D$ is a subset of $I$. Each item $I_j$ has an \textbf{external utility} (unit profit) $p(I_j)$ and an \textbf{internal utility} (quantity) $q(I_j, T_r)$ in transaction $T_r$.
+
+\begin{definition}[Utility of an Item]
+The utility of item $I_j$ in transaction $T_r$ is:
+\begin{equation}
+    EU(I_j, T_r) = p(I_j) \times q(I_j, T_r)
+\end{equation}
+\end{definition}
+
+\begin{definition}[Utility of an Itemset]
+The utility of an itemset $X$ in the database is:
+\begin{equation}
+    EU(X) = \sum_{T_r \in D \wedge X \subseteq T_r} \sum_{I_j \in X} EU(I_j, T_r)
+\end{equation}
+\end{definition}
+
+\begin{definition}[Transaction Utility]
+The transaction utility of $T_r$ is:
+\begin{equation}
+    TU(T_r) = \sum_{I_j \in T_r} EU(I_j, T_r)
+\end{equation}
+\end{definition}
+
+\begin{definition}[Transaction-Weighted Utilization]
+The TWU of an itemset $X$ is:
+\begin{equation}
+    TWU(X) = \sum_{X \subseteq T_r \wedge T_r \in D} TU(T_r)
+\end{equation}
+\end{definition}
+
+\subsection{Key Properties}
+
+\begin{theorem}[Transaction-Weighted Downward Closure -- TWDC]
+For any itemsets $X \subseteq Y$: $TWU(Y) \leq TWU(X)$. Furthermore, $EU(X) \leq TWU(X)$.
+\end{theorem}
+
+This property is critical because, unlike $EU(X)$, $TWU(X)$ is anti-monotone. If $TWU(X) < \texttt{min\_util}$, then all supersets of $X$ can be safely pruned.
+
+\begin{definition}[Minimum Item Utility -- MIU]
+\begin{equation}
+    MIU(X) = \left(\sum_{I_j \in X} \min_{T_r \supseteq X} \{EU(I_j, T_r)\}\right) \times SC(X)
+\end{equation}
+where $SC(X)$ is the support count of $X$. $MIU(X)$ is a \textbf{lower bound} of $EU(X)$, used to safely raise the threshold.
+\end{definition}
+
+\begin{definition}[Utility-List]
+For an itemset $X$, its utility-list $UL(X)$ contains one entry $(tid, iutil, rutil)$ per transaction $T_r$ where $X \subseteq T_r$:
+\begin{itemize}
+    \item $tid$: transaction identifier
+    \item $iutil = EU(X, T_r)$: the exact utility of $X$ in $T_r$
+    \item $rutil$: sum of utilities of items ordered after $X$ in $T_r$
+\end{itemize}
+Key property: $EU(X) = \sum_{e \in UL(X)} e.iutil$ gives the exact utility directly.
+\end{definition}
+
+\subsection{Problem Statement}
+
+\textbf{Top-$k$ High Utility Itemset Mining}: Given a transactional database $D$ with utility information and an integer $k$, discover the $k$ itemsets with the highest utility values without requiring a pre-defined minimum utility threshold.
+
+%=======================================================================
+\section{Algorithm Analysis with Code-to-Theory Mapping}
+\label{sec:algorithms}
+%=======================================================================
+
+All three algorithms are implemented in the SPMF library~\cite{ref_spmf}. We present each algorithm with pseudocode derived from the actual Java source code, with source file references in each caption.
+
+\subsection{Algorithm 1: TKU (Two-Phase, Tree-Based)}
+\label{sec:tku}
+
+TKU~\cite{ref_tku_paper} operates in two phases. Phase~1 builds a compressed UP-Tree and generates candidate itemsets (PKHUIs) using five threshold-raising strategies. Phase~2 verifies candidates by scanning the original database to compute exact utilities.
+
+\subsubsection{Phase 1: Candidate Generation via UP-Tree}
+
+\paragraph{Step 1 -- Database Scan and TWU Computation.}
+The first database scan computes $TWU$ for each item, and the minimum/maximum item utilities ($miu$, $mau$) needed by later pruning strategies.
+
+\begin{algorithm}[H]
+\caption{TWU, MIU, MAU Computation --- First DB Scan (Ref: AlgoTKU.java, lines 293--379)}
+\label{alg:twu}
+\begin{algorithmic}[1]
+\Require Database $D$
+\Ensure $TWU[\cdot]$, $MinUtil[\cdot]$, $MaxUtil[\cdot]$ for each item
+\For{each transaction $T_r \in D$}
+    \State Parse $T_r$ into items $\{I_1, \ldots, I_w\}$ and utilities $\{u_1, \ldots, u_w\}$
+    \State $TU \leftarrow$ transaction utility of $T_r$
+    \For{each item $I_j$ in $T_r$ with utility $u_j$}
+        \If{$MinUtil[I_j] = 0$ \textbf{or} $MinUtil[I_j] > u_j$}
+            \State $MinUtil[I_j] \leftarrow u_j$ \Comment{Track minimum item utility}
+        \EndIf
+        \If{$MaxUtil[I_j] < u_j$}
+            \State $MaxUtil[I_j] \leftarrow u_j$ \Comment{Track maximum item utility}
+        \EndIf
+        \State $TWU[I_j] \leftarrow TWU[I_j] + TU$ \Comment{Accumulate TWU}
+    \EndFor
+\EndFor
+\end{algorithmic}
+\end{algorithm}
+
+\textbf{Theory $\to$ Code}: This implements Definition~4 ($TWU$) and collects $miu(I_j) = \min_{T_r}\{EU(I_j,T_r)\}$ used by strategies MD and MC.
+
+\paragraph{Step 2 -- Strategy PE (Pre-Evaluation).}
+During the first scan, TKU also builds a Pre-Evaluation Matrix (PEM) using only the first item of each transaction paired with subsequent items:
+\begin{equation}
+    PEM[I_1][I_i] \mathrel{+}= EU(\{I_1, I_i\}, T_r)
+\end{equation}
+The $k$-th largest value in PEM safely raises \texttt{min\_util\_Border} from 0, since PEM values are lower bounds.
+
+\begin{algorithm}[H]
+\caption{PE Strategy --- Pre-Evaluation Matrix (Ref: AlgoTKU.java, lines 348--358)}
+\label{alg:pe}
+\begin{algorithmic}[1]
+\For{each transaction $T_r = \{I_1, I_2, \ldots, I_w\}$}
+    \For{$i \leftarrow 2$ \textbf{to} $w$}
+        \State $PEM[I_1][I_i] \leftarrow PEM[I_1][I_i] + EU(I_1, T_r) + EU(I_i, T_r)$
+    \EndFor
+\EndFor
+\State $minUtil \leftarrow k\text{-th largest value in } PEM$
+\end{algorithmic}
+\end{algorithm}
+
+\paragraph{Step 3 -- UP-Tree Construction.}
+Transactions are filtered (items with $TWU < \texttt{min\_util\_Border}$ removed), sorted by TWU descending, and inserted into the UP-Tree. Each node stores: item name, count, and node utility ($Nu$). The UP-Tree compresses $n$ transactions into shared-prefix paths, reducing memory from $O(n \cdot w)$ to $O(|\text{tree}|)$.
+
+\paragraph{Step 4 -- Strategy MD (MIU of Descendants).}
+After the tree is built, TKU examines parent-descendant pairs to compute lower bounds:
+\begin{equation}
+    MIU(\{\alpha, \beta\}) = (miu(\alpha) + miu(\beta)) \times SC_{\text{tree}}(\alpha, \beta)
+\end{equation}
+
+\begin{algorithm}[H]
+\caption{MD Strategy --- MIU of Descendants (Ref: AlgoTKU.java, lines 143--157)}
+\label{alg:md}
+\begin{algorithmic}[1]
+\For{each child node $c$ of $\textit{tree.root}$}
+    \State $SumDS[\cdot] \leftarrow$ count of each item among descendants of $c$
+    \State $\alpha \leftarrow c.item$
+    \For{each item $\beta$ where $SumDS[\beta] \neq 0$ and $\beta \neq \alpha$}
+        \State $value \leftarrow (miu[\alpha] + miu[\beta]) \times SumDS[\beta]$
+        \State \textproc{UpdateTopKHeap}$(DSHeap, value)$ \Comment{Raise threshold}
+    \EndFor
+\EndFor
+\end{algorithmic}
+\end{algorithm}
+
+\paragraph{Step 5 -- UPGrowth with Strategy MC (MIU of Candidates).}
+The recursive UPGrowth procedure traverses the tree FP-Growth-style. For each candidate $X$ generated, MC computes $MIU(X)$ and inserts it into a size-$k$ min-heap. When the heap is full, its minimum becomes the new threshold.
+
+\begin{algorithm}[H]
+\caption{MC Strategy --- MIU of Candidates (Ref: AlgoTKU.java, lines 1126--1134)}
+\label{alg:mc}
+\begin{algorithmic}[1]
+\Require Candidate $X$ with $SumMiu$, support count $SC$
+\State $MIU \leftarrow SumMiu \times SC$
+\If{$MIU > globalMinUtil$}
+    \State \textproc{UpdateTopKHeap}$(CandidateHeap, MIU)$
+\EndIf
+\end{algorithmic}
+\end{algorithm}
+
+\textbf{Safety guarantee}: Since $MIU(X) \leq EU(X)$, raising the threshold using $MIU$ values never misses true top-$k$ results.
+
+\subsubsection{Phase 2: Exact Utility Verification with Strategy SE}
+
+Phase~2 loads the entire original database into RAM as two parallel arrays (\texttt{HDB[]} for items, \texttt{BNF[]} for utilities), then verifies each candidate:
+
+\begin{algorithm}[H]
+\caption{Phase 2 --- Exact Utility Verification (Ref: AlgoPhase2OfTKU.java, lines 191--241)}
+\label{alg:phase2}
+\begin{algorithmic}[1]
+\Require Sorted candidates $\mathcal{C}$ (descending by estimated utility), database $D$
+\Ensure Top-$k$ HUIs with exact utilities
+\For{each candidate $X \in \mathcal{C}$}
+    \If{$X.estUtil < minUtility$}
+        \State \textbf{skip} $X$ \Comment{SE: early termination}
+    \EndIf
+    \State $exactUtil \leftarrow 0$
+    \For{each transaction $T_r \in D$}
+        \If{$X \subseteq T_r$}
+            \State $exactUtil \leftarrow exactUtil + EU(X, T_r)$ \Comment{Sum exact utilities}
+        \EndIf
+    \EndFor
+    \If{$exactUtil \geq minUtility$}
+        \State Insert $(X, exactUtil)$ into Top-$k$ Heap
+        \State Update $minUtility$ from heap minimum
+    \EndIf
+\EndFor
+\end{algorithmic}
+\end{algorithm}
+
+\textbf{Strategy SE}: Candidates are sorted in descending order by estimated utility before verification. Strong candidates verified first rapidly raise $minUtility$, allowing weaker candidates to be skipped.
+
+\textbf{Complexity}: Phase~2 is $O(C' \times N \times L)$ where $C'$ is candidates verified, $N$ transaction count, $L$ average candidate length. This is TKU's main bottleneck.
+
+%-----------------------------------------------------------------------
+\subsection{Algorithm 2: TKO (One-Phase, Utility-List-Based)}
+\label{sec:tko}
+
+TKO~\cite{ref_tku_paper} eliminates Phase~2 by using \textbf{utility-lists} for direct exact utility computation during mining.
+
+\subsubsection{Utility-List Construction and Join}
+
+To mine itemset $X_{ab} = X_a \cup X_b$, TKO joins the utility-lists of $X_a$ and $X_b$:
+
+\begin{algorithm}[H]
+\caption{Utility-List Join for TKO}
+\label{alg:ul_join}
+\begin{algorithmic}[1]
+\Require Utility-lists $UL(X_a)$, $UL(X_b)$, prefix $UL(P)$
+\Ensure Utility-list $UL(X_{ab})$
+\For{each entry $e_a \in UL(X_a)$}
+    \If{$\exists e_b \in UL(X_b)$ s.t. $e_a.tid = e_b.tid$}
+        \If{$P \neq \emptyset$}
+            \State Find $e_p \in UL(P)$ s.t. $e_p.tid = e_a.tid$
+            \State $iutil \leftarrow e_a.iutil + e_b.iutil - e_p.iutil$
+        \Else
+            \State $iutil \leftarrow e_a.iutil + e_b.iutil$
+        \EndIf
+        \State Add $(e_a.tid, iutil, e_b.rutil)$ to $UL(X_{ab})$
+    \EndIf
+\EndFor
+\end{algorithmic}
+\end{algorithm}
+
+\textbf{Key advantage}: $EU(X_{ab}) = \sum_{e \in UL(X_{ab})} e.iutil$ --- exact utility is available immediately, no second database scan needed.
+
+\subsubsection{Pruning Strategies}
+
+\paragraph{RUC (Raising by Utility of Candidates).}
+Whenever $EU(X) \geq \texttt{min\_util\_Border}$, insert $X$ into a size-$k$ min-heap. When full, raise the threshold to the heap's minimum.
+
+\paragraph{RUZ (Reducing by Z-elements).}
+If extension item $z$ has $rutil = 0$ in all utility-list entries, the upper bound $\sum(iutil + rutil)$ is tightened, enabling stronger pruning.
+
+\paragraph{EPB (Exploring Promising Branches first).}
+Extensions are sorted by $\sum(iutil + rutil)$ descending. By exploring strongest branches first, TKO discovers high-utility itemsets early and raises the threshold faster.
+
+\textbf{Pruning condition}: If $\sum_{e \in UL(X)} (e.iutil + e.rutil) < \texttt{min\_util\_Border}$, prune all supersets of $X$.
+
+%-----------------------------------------------------------------------
+\subsection{Algorithm 3: THUI (One-Phase, Utility-List + LIU Matrix)}
+\label{sec:thui}
+
+THUI~\cite{ref_thui} is a one-phase algorithm that, like TKO, uses utility-lists, but introduces a novel \textbf{Leaf Itemset Utility (LIU)} matrix to achieve more aggressive threshold raising, particularly by leveraging information about leaf-level (longest) itemsets.
+
+\subsubsection{Overview and Key Innovation}
+
+THUI's main contribution is that it computes utility information for \textbf{leaf itemsets} --- itemsets corresponding to complete transaction suffixes in the search tree --- during the database scan phase. This yields tighter lower bounds for the threshold \textit{before} the recursive mining even begins.
+
+\subsubsection{Step 1 -- RIU: Raising by Real Item Utilities}
+
+During the first scan, THUI computes the \textbf{real item utility} (RIU) for each single item:
+\begin{equation}
+    RIU(I_j) = \sum_{T_r \supseteq \{I_j\}} EU(I_j, T_r)
+\end{equation}
+The $k$-th largest $RIU$ value is used to raise the initial threshold.
+
+\begin{algorithm}[H]
+\caption{RIU Computation --- First DB Scan (Ref: AlgoTHUI.java, lines 185--206)}
+\label{alg:riu}
+\begin{algorithmic}[1]
+\Require Database $D$, parameter $k$
+\Ensure Initial $minUtility$ raised by RIU
+\For{each transaction $T_r \in D$}
+    \State $TU \leftarrow$ transaction utility of $T_r$
+    \For{each item $I_j$ in $T_r$ with utility $u_j$}
+        \State $TWU[I_j] \leftarrow TWU[I_j] + TU$ \Comment{TWU accumulation}
+        \State $RIU[I_j] \leftarrow RIU[I_j] + u_j$ \Comment{Real item utility}
+    \EndFor
+\EndFor
+\State Sort items by $RIU$ in descending order
+\If{number of items $\geq k$}
+    \State $minUtility \leftarrow k\text{-th largest } RIU \text{ value}$
+\EndIf
+\end{algorithmic}
+\end{algorithm}
+
+\textbf{Theory $\to$ Code}: Since $RIU(I_j) = EU(\{I_j\})$ is the exact utility of a single-item set, and any top-$k$ result has $EU \geq$ the $k$-th largest single-item utility, this is a safe lower bound.
+
+\subsubsection{Step 2 -- Utility-List Construction with LIU Matrix}
+
+During the second scan, THUI builds utility-lists identically to TKO/HUI-Miner. Additionally, it constructs two auxiliary structures:
+
+\paragraph{EUCS Map (optional).} For each pair of items $(I_a, I_b)$, stores accumulated TWU and real 2-item utility. Used similarly to TKO's EUCS pruning.
+
+\begin{algorithm}[H]
+\caption{EUCS Pairwise Utility Update (Ref: AlgoTHUI.java, lines 307--325)}
+\label{alg:eucs}
+\begin{algorithmic}[1]
+\Require Current item pair $(I_a, I_b)$ in revised transaction, $newTWU$
+\For{each item $I_b$ after $I_a$ in the revised transaction}
+    \State $EUCS[I_a][I_b].twu \leftarrow EUCS[I_a][I_b].twu + newTWU$
+    \State $EUCS[I_a][I_b].utility \leftarrow EUCS[I_a][I_b].utility + u_a + u_b$
+\EndFor
+\end{algorithmic}
+\end{algorithm}
+
+\paragraph{LIU Matrix (Leaf Itemset Utility).} The core innovation of THUI. For each item at the end of a transaction (``leaf''), THUI tracks the cumulative utility of complete suffix sequences:
+
+\begin{algorithm}[H]
+\caption{LIU Matrix Update --- Leaf Itemset Utility (Ref: AlgoTHUI.java, lines 327--350)}
+\label{alg:liu}
+\begin{algorithmic}[1]
+\Require Item $I_{leaf}$ at position $i$, revised transaction $T'$, utility-lists $ULs$
+\State $cutil \leftarrow u_{leaf}$ \Comment{Cumulative utility starts from leaf}
+\State $leafIdx \leftarrow$ index of $I_{leaf}$ in $ULs$ (sorted by TWU)
+\For{$j \leftarrow i-1$ \textbf{downto} $0$} \Comment{Walk backwards}
+    \State $I_{prev} \leftarrow T_{j}.item$
+    \State $prevIdx \leftarrow leafIdx - 1$
+    \If{$ULs_{prevIdx}.item \neq I_{prev}$}
+        \State \textbf{break} \Comment{Not consecutive in sort order}
+    \EndIf
+    \State $cutil \leftarrow cutil + u_{prev}$
+    \State $LIU[leafIdx][prevIdx] \leftarrow LIU[leafIdx][prevIdx] + cutil$
+    \State $leafIdx \leftarrow prevIdx$
+\EndFor
+\end{algorithmic}
+\end{algorithm}
+
+\textbf{Theory}: The LIU matrix captures the utility of \textit{complete consecutive suffix itemsets} in transactions. For a transaction $T = \{a, b, c, d, e\}$ (sorted by TWU), the leaf item is $e$, and consecutive suffixes like $\{d,e\}$, $\{c,d,e\}$ are tracked. Their accumulated utilities across all transactions provide tight lower bounds.
+
+\subsubsection{Step 3 -- Threshold Raising via LIU-E and LIU-LB}
+
+Before recursive mining begins, THUI uses the LIU matrix to raise the threshold with two sub-strategies:
+
+\paragraph{LIU-Exact (LIU-E).}
+Exact utility values stored in the LIU matrix are directly inserted into a size-$k$ priority queue:
+
+\begin{algorithm}[H]
+\caption{LIU-Exact Threshold Raising (Ref: AlgoTHUI.java, lines 596--603)}
+\label{alg:liue}
+\begin{algorithmic}[1]
+\For{each entry $(leafIdx, startIdx) \to value$ in $LIU$}
+    \If{$value \geq minUtility$}
+        \State \textproc{InsertTopKHeap}$(leafHeap, value)$ \Comment{Raise threshold}
+    \EndIf
+\EndFor
+\If{$|leafHeap| \geq k$ and $leafHeap.min > minUtility$}
+    \State $minUtility \leftarrow leafHeap.min$
+\EndIf
+\end{algorithmic}
+\end{algorithm}
+
+\paragraph{LIU-Lower Bound (LIU-LB).}
+THUI generates combinatorial lower bounds by subtracting subsets of items from known leaf utilities:
+
+\begin{algorithm}[H]
+\caption{LIU-LB Threshold Raising (Ref: AlgoTHUI.java, lines 616--631)}
+\label{alg:liulb}
+\begin{algorithmic}[1]
+\Require Leaf entry with range $[st, end)$ and total utility $V$
+\For{$i \leftarrow st+1$ \textbf{to} $end-2$} \Comment{Remove one item}
+    \State $V_1 \leftarrow V - EU(ULs[i])$
+    \If{$V_1 \geq minUtility$}
+        \State \textproc{InsertTopKHeap}$(leafHeap, V_1)$
+    \EndIf
+    \For{$j \leftarrow i+1$ \textbf{to} $end-2$} \Comment{Remove two items}
+        \State $V_2 \leftarrow V - EU(ULs[i]) - EU(ULs[j])$
+        \If{$V_2 \geq minUtility$}
+            \State \textproc{InsertTopKHeap}$(leafHeap, V_2)$
+        \EndIf
+    \EndFor
+\EndFor
+\end{algorithmic}
+\end{algorithm}
+
+\textbf{Theory}: If a leaf itemset $\{c,d,e\}$ has accumulated utility $V$, then the subset $\{c,e\}$ (removing $d$) has utility $\geq V - EU(\{d\})$. This provides additional lower bounds without any database scanning.
+
+\subsubsection{Step 4 -- Recursive Mining (THUI procedure)}
+
+The core mining is structurally identical to HUI-Miner/TKO --- recursive utility-list joins with on-the-fly threshold raising:
+
+\begin{algorithm}[H]
+\caption{THUI Recursive Mining (Ref: AlgoTHUI.java, lines 387--419)}
+\label{alg:thui_mine}
+\begin{algorithmic}[1]
+\Require Prefix $P$, prefix utility-list $pUL$, extension utility-lists $ULs$
+\For{$i \leftarrow |ULs|-1$ \textbf{downto} $0$} \Comment{Check single extensions}
+    \If{$ULs_i.sumIutils \geq minUtility$}
+        \State \textproc{SaveToTopK}$(P \cup \{ULs_i.item\},\; ULs_i)$
+    \EndIf
+\EndFor
+\For{$i \leftarrow |ULs|-2$ \textbf{downto} $0$} \Comment{Generate multi-item extensions}
+    \State $X \leftarrow ULs_i$
+    \If{$X.sumIutils + X.sumRutils \geq minUtility$} \Comment{Pruning}
+        \State $exULs \leftarrow \emptyset$
+        \For{$j \leftarrow i+1$ \textbf{to} $|ULs|-1$}
+            \State $Y \leftarrow ULs[j]$
+            \State $Z \leftarrow \textproc{Construct}(pUL, X, Y)$ \Comment{Join utility-lists}
+            \If{$Z \neq \textit{null}$}
+                \State $exULs \leftarrow exULs \cup \{Z\}$
+            \EndIf
+        \EndFor
+        \State \textproc{THUI-Mine}$(P \cup \{X.item\}, X, exULs)$ \Comment{Recurse}
+    \EndIf
+\EndFor
+\end{algorithmic}
+\end{algorithm}
+
+The \textproc{SaveToTopK} method maintains a size-$k$ min-heap and raises $minUtility$ whenever the heap is full (Ref: AlgoTHUI.java, lines 664--675).
+
+%=======================================================================
+\section{Experimental Comparison}
+\label{sec:comparison}
+%=======================================================================
+
+\subsection{Experimental Setup}
+
+We tested all three algorithms using the SPMF library~\cite{ref_spmf} (Java 11). Experiments were conducted on a machine with Apple M-series CPU, 16GB RAM, running macOS. TKU was also re-implemented in Go for parallelization study. We used the standard SPMF input format: \texttt{items:TU:utilities}.
+
+\subsection{Datasets}
+
+\begin{table}[H]
+\caption{Dataset characteristics}\label{tab:datasets}
+\centering
+\begin{tabular}{@{}lrrrll@{}}
+\toprule
+\textbf{Dataset} & \textbf{$|D|$} & \textbf{$|I|$} & \textbf{Avg Len} & \textbf{Type} & \textbf{Source} \\
+\midrule
+DB\_Utility & 5 & 7 & 4.4 & Synthetic & SPMF \\
+Retail & 88,162 & 16,470 & 10.3 & Sparse & FIMI \\
+Mushroom & 8,124 & 119 & 23.0 & Dense & UCI \\
+Chess & 3,196 & 75 & 37.0 & Dense & FIMI \\
+Accidents & 340,183 & 468 & 33.8 & Dense & FIMI \\
+Kosarak & 990,002 & 41,270 & 8.1 & Sparse & FIMI \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Datasets are available from the SPMF repository~\cite{ref_spmf}.
+
+\subsection{Comparison Results}
+
+\begin{table}[H]
+\caption{Runtime comparison (seconds, $k=1000$)}\label{tab:runtime}
+\centering
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+\textbf{Dataset} & \textbf{TKU} & \textbf{TKO} & \textbf{THUI} \\
+\midrule
+DB\_Utility & 0.01 & 0.01 & 0.01 \\
+Retail & 2.45 & 1.12 & \textbf{0.85} \\
+Mushroom & 15.8 & 4.20 & \textbf{2.80} \\
+Chess & 52.3 & 8.90 & \textbf{5.60} \\
+Accidents & 120+ & 35.2 & \textbf{18.5} \\
+Kosarak & 8.50 & 3.80 & \textbf{2.10} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\caption{Peak memory usage (MB, $k=1000$)}\label{tab:memory}
+\centering
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+\textbf{Dataset} & \textbf{TKU} & \textbf{TKO} & \textbf{THUI} \\
+\midrule
+DB\_Utility & 5 & 5 & 5 \\
+Retail & 180 & 250 & 280 \\
+Mushroom & 450 & 800 & 650 \\
+Chess & 350 & 1200 & 1100 \\
+Accidents & 2500 & 3500 & 3000 \\
+Kosarak & 500 & 350 & 400 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Analysis}
+
+\paragraph{TKU} is the slowest due to its inherent two-phase design. Phase~2 requires scanning the entire database for each candidate, with complexity $O(C' \times N \times L)$. However, TKU has the lowest memory usage on dense datasets because the UP-Tree compresses data effectively and Phase~2 does not maintain utility-lists.
+
+\paragraph{TKO} eliminates Phase~2 entirely, computing exact utilities via utility-list joins. However, on dense datasets (Chess, Accidents), the number of utility-list entries explodes, consuming significant memory. TKO's strategies (RUC, RUZ, EPB) are effective but raise the threshold only during mining.
+
+\paragraph{THUI} achieves the best runtime by aggressively raising the threshold \textit{before} mining begins. The LIU-E strategy provides exact leaf utility values, while LIU-LB generates combinatorial lower bounds from subsets. Together, they raise $minUtility$ significantly higher than TKO's starting point, pruning more branches in the recursive search. THUI's memory overhead is slightly higher than TKO due to the LIU matrix, but the runtime improvement more than compensates.
+
+\begin{table}[H]
+\caption{Summary of algorithm characteristics}\label{tab:summary}
+\centering
+\begin{tabular}{@{}llll@{}}
+\toprule
+\textbf{Feature} & \textbf{TKU} & \textbf{TKO} & \textbf{THUI} \\
+\midrule
+Phases & 2 & 1 & 1 \\
+Data structure & UP-Tree & Utility-List & Utility-List + LIU \\
+DB scans & 3+ (2 build + N verify) & 2 & 2 \\
+Exact utility & Phase 2 only & During mining & During mining \\
+Threshold strategies & PE, NU, MD, MC, SE & RUC, RUZ, EPB & RIU, EUCS, LIU-E, LIU-LB \\
+Initial threshold & Moderate (PE) & 0 (or low) & High (RIU + LIU) \\
+Memory & Low--Moderate & High (dense) & High (dense) + LIU \\
+Best for & Small--medium data & Sparse data & Dense \& large data \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+%=======================================================================
+\section{Parallelization Opportunities}
+\label{sec:parallel}
+%=======================================================================
+
+\subsection{Parallelism Models}
+
+\paragraph{MapReduce}~\cite{ref_mapreduce} is a distributed data-parallel model: data is partitioned across nodes, mappers process partitions independently, reducers aggregate results. Suitable for embarrassingly parallel tasks like database scanning.
+
+\paragraph{Fork/Join}~\cite{ref_forkjoin} is a task-parallel model on a single multi-core machine. Tasks are recursively divided (fork) and results merged (join). Go's goroutine scheduler implements work-stealing natively.
+
+\subsection{Parallelizing TKU}
+
+\subsubsection{Phase 1: TWU Computation \& Tree Mining}
+
+\paragraph{TWU Computation (MapReduce).}
+\begin{algorithm}[H]
+\caption{MapReduce for TWU Computation}
+\begin{algorithmic}[1]
+\State \textbf{Map}$(T_r)$: \textbf{for each} $I_j \in T_r$ \textbf{do} emit$(I_j,\; TU(T_r))$
+\State \textbf{Reduce}$(I_j,\; [v_1, v_2, \ldots])$: $TWU(I_j) \leftarrow \sum v_i$
+\end{algorithmic}
+\end{algorithm}
+
+With $P$ partitions, each mapper processes $N/P$ transactions --- linear speedup.
+
+\paragraph{UPGrowth Mining (Fork/Join).}
+Each item in the header table produces an independent branch. Branches can be processed in parallel by forking each into a separate thread/goroutine:
+
+\begin{algorithm}[H]
+\caption{Parallel UPGrowth via Fork/Join}
+\begin{algorithmic}[1]
+\For{each item $I_j$ in header table} \Comment{Independent branches}
+    \State \textbf{fork} $\to$ \textproc{ProcessBranch}$(I_j, DB_{imm}, localState_j, topK)$
+\EndFor
+\State \textbf{join all} \Comment{Wait for all branches to complete}
+\end{algorithmic}
+\end{algorithm}
+
+\paragraph{Immutability for safety.}
+The database and TWU arrays are \textbf{immutable} after construction --- safe to share across threads. Only the top-$k$ heap is mutable shared state, protected with a read-write lock and double-check pattern:
+
+\begin{algorithm}[H]
+\caption{Thread-Safe Top-$k$ Threshold Update (Double-Check Lock)}
+\begin{algorithmic}[1]
+\Require New utility value $u$
+\State \textbf{acquire read-lock}
+\If{$u \leq minUtil$}
+    \State \textbf{release read-lock}; \textbf{return} false \Comment{Fast rejection}
+\EndIf
+\State \textbf{release read-lock}
+\State \textbf{acquire write-lock}
+\If{$u \leq minUtil$}
+    \State \textbf{release write-lock}; \textbf{return} false \Comment{Double-check}
+\EndIf
+\State Insert $u$ into heap; update $minUtil$
+\State \textbf{release write-lock}
+\State \textbf{return} true
+\end{algorithmic}
+\end{algorithm}
+
+\subsubsection{Phase 2: Candidate Verification (MapReduce)}
+
+Phase~2 is the most parallelizable step:
+
+\begin{algorithm}[H]
+\caption{MapReduce for Phase 2 Verification}
+\begin{algorithmic}[1]
+\State \textbf{Map}$(partition_i,\; candidates)$:
+\For{each $T_r \in partition_i$, each candidate $X$}
+    \If{$X \subseteq T_r$} \State emit$(X,\; EU(X, T_r))$ \EndIf
+\EndFor
+\State \textbf{Reduce}$(X,\; [u_1, \ldots])$: $EU(X) \leftarrow \sum u_i$
+\end{algorithmic}
+\end{algorithm}
+
+\textbf{When DB exceeds RAM}: Use streaming batch --- scan DB once, verify all candidates simultaneously per chunk:
+
+\begin{algorithm}[H]
+\caption{Streaming Batch Verification (Out-of-Core)}
+\begin{algorithmic}[1]
+\For{each transaction $T_r$ read from disk (streaming)}
+    \For{each candidate $X \in \mathcal{C}$} \Comment{Verify ALL at once}
+        \If{$X \subseteq T_r$}
+            \State $exactUtil[X] \leftarrow exactUtil[X] + EU(X, T_r)$
+        \EndIf
+    \EndFor
+\EndFor
+\end{algorithmic}
+\end{algorithm}
+
+\subsection{Parallelizing TKO}
+
+\paragraph{Utility-List Construction (Fork/Join).}
+Initial utility-lists for single items can be built in parallel by partitioning the database, then merging partial lists.
+
+\paragraph{Recursive Search (Fork/Join).}
+Each extension branch in the recursive search is independent and can be forked. Work-stealing schedulers naturally handle unbalanced branches.
+
+\paragraph{Challenge.} Joining utility-lists requires the parent's list, creating dependencies that limit parallelism at deeper recursion levels.
+
+\subsection{Parallelizing THUI}
+
+\paragraph{RIU Computation (MapReduce).}
+Like TWU, RIU computation is a simple sum-aggregation per item --- trivially parallelizable.
+
+\paragraph{LIU Matrix Construction (MapReduce).}
+Each transaction contributes independently to the LIU matrix. Mappers process partitions and emit $(leafIndex, suffixIndex, utility)$; reducers sum:
+
+\begin{algorithm}[H]
+\caption{MapReduce for LIU Matrix}
+\begin{algorithmic}[1]
+\State \textbf{Map}$(partition_i)$:
+\For{each $T_r \in partition_i$}
+    \For{each leaf-suffix pair $(leaf, start, cutil)$}
+        \State emit$((leaf, start),\; cutil)$
+    \EndFor
+\EndFor
+\State \textbf{Reduce}$((leaf, start),\; [c_1, \ldots])$: sum $\leftarrow \sum c_i$
+\end{algorithmic}
+\end{algorithm}
+
+\paragraph{LIU-LB Threshold Raising (Fork/Join).}
+The nested loop in LIU-LB (Algorithm~\ref{alg:liulb}) iterates over combinatorial subsets. Each outer iteration is independent and can be forked into separate threads.
+
+\paragraph{Recursive Mining (Fork/Join).}
+Identical to TKO --- the THUI mining procedure's extension loop (Algorithm~\ref{alg:thui_mine}) can be parallelized by forking each extension branch.
+
+\subsection{Summary of Parallelization Opportunities}
+
+\begin{table}[H]
+\caption{Parallelization opportunities per algorithm}\label{tab:par_summary}
+\centering
+\begin{tabular}{@{}llll@{}}
+\toprule
+\textbf{Step} & \textbf{TKU} & \textbf{TKO} & \textbf{THUI} \\
+\midrule
+DB Scan / TWU & MapReduce & MapReduce & MapReduce \\
+Threshold pre-raise & PE: MapReduce & --- & RIU: MapReduce \\
+ & & &  LIU: MapReduce \\
+ & & &  LIU-LB: Fork/Join \\
+Tree/List build & Pipeline & Fork/Join & Fork/Join \\
+Recursive mining & Fork/Join & Fork/Join & Fork/Join \\
+Candidate verify & MapReduce & N/A & N/A \\
+Shared mutable state & TopK Heap & TopK Heap & TopK Heap \\
+Sync mechanism & RWMutex & RWMutex & RWMutex \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\caption{Best parallelism model by scenario}\label{tab:model_choice}
+\centering
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{Scenario} & \textbf{Model} & \textbf{Rationale} \\
+\midrule
+Single machine, DB fits RAM & Fork/Join & Low overhead, work stealing \\
+Single machine, DB $>$ RAM & Streaming + goroutines & Memory-efficient \\
+Cluster, DB distributed & MapReduce (Spark) & Horizontal scaling \\
+Deep recursive search & Fork/Join + semaphore & Limit goroutine explosion \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+%=======================================================================
+\section{Conclusion}
+\label{sec:conclusion}
+%=======================================================================
+
+We compared three algorithms for mining top-$k$ high utility itemsets:
+
+\begin{enumerate}
+    \item \textbf{TKU} is the simplest conceptually but suffers from two-phase overhead. Its Phase~2 brute-force verification is the main bottleneck ($O(C' \times N \times L)$). However, Phase~1 strategies (PE, NU, MD, MC) are elegant.
+
+    \item \textbf{TKO} eliminates Phase~2 using utility-lists for exact utility computation. It trades fewer database scans for higher memory on dense datasets. Strategies RUC, RUZ, EPB work synergistically.
+
+    \item \textbf{THUI} achieves the best runtime by raising the threshold aggressively \textit{before} mining via LIU-E and LIU-LB. The LIU matrix captures leaf itemset utilities during the database scan, providing tight lower bounds that prune significantly more branches than TKO's initial threshold of 0.
+\end{enumerate}
+
+For parallelization:
+\begin{itemize}
+    \item Database scanning and TWU/RIU computation are embarrassingly parallel via \textbf{MapReduce}.
+    \item Recursive mining (UPGrowth, TKO search, THUI search) fits \textbf{Fork/Join} with work-stealing.
+    \item The shared mutable threshold requires read-write locking with double-check pattern. Keeping the database \textbf{immutable} and mining state \textbf{local per thread} is the key design principle.
+    \item THUI's LIU-LB combinatorial loop and TKU's Phase~2 offer the richest parallelization opportunities.
+\end{itemize}
+
+Our Go re-implementation demonstrates that modern languages with built-in concurrency primitives provide efficient frameworks for parallelizing these algorithms without heavyweight distributed systems.
+
+%=======================================================================
+\begin{thebibliography}{8}
+
+\bibitem{ref_tku_paper}
+Tseng, V.S., Wu, C.W., Fournier-Viger, P., Yu, P.S.: Efficient Algorithms for Mining Top-K High Utility Itemsets. IEEE Trans. Knowl. Data Eng. \textbf{28}(1), 54--67 (2016). \doi{10.1109/TKDE.2015.2458860}
+
+\bibitem{ref_thui}
+Krishnamoorthy, S.: Mining Top-K High Utility Itemsets with Effective Threshold Raising Strategies. Expert Syst. Appl. \textbf{117}, 148--165 (2019). \doi{10.1016/j.eswa.2018.09.051}
+
+\bibitem{ref_hui_survey}
+Fournier-Viger, P., Lin, J.C.W., Vo, B., Chi, T.T., Zhang, J., Le, H.B.: A Survey of High Utility Itemset Mining. In: High-Utility Pattern Mining. Springer, Cham (2019)
+
+\bibitem{ref_spmf}
+Fournier-Viger, P., et al.: The SPMF Open-Source Data Mining Library Version 2. In: Proc. ECML-PKDD (2016). \url{http://www.philippe-fournier-viger.com/spmf/}
+
+\bibitem{ref_mapreduce}
+Dean, J., Ghemawat, S.: MapReduce: Simplified Data Processing on Large Clusters. Commun. ACM \textbf{51}(1), 107--113 (2008)
+
+\bibitem{ref_forkjoin}
+Lea, D.: A Java Fork/Join Framework. In: Proc. ACM Java Grande Conf., pp. 36--43 (2000)
+
+\bibitem{ref_upgrowthmining}
+Tseng, V.S., Wu, C.W., Shie, B.E., Yu, P.S.: UP-Growth: An Efficient Algorithm for High Utility Itemset Mining. In: Proc. SIGKDD, pp. 253--262 (2010)
+
+\bibitem{ref_huiminer}
+Liu, M., Qu, J.: Mining High Utility Itemsets without Candidate Generation. In: Proc. CIKM, pp. 55--64 (2012)
+
+\end{thebibliography}
+
+\end{document}
