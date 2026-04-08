@@ -1,0 +1,6 @@
+\subsection{Parallelism Models}
+
+\paragraph{MapReduce}~\cite{ref_mapreduce} is a distributed data-parallel model: data is partitioned across nodes, mappers process partitions independently, reducers aggregate results. Suitable for embarrassingly parallel tasks like database scanning.
+
+\paragraph{Fork/Join}~\cite{ref_forkjoin} is a task-parallel model on a single multi-core machine. Tasks are recursively divided (fork) and results merged (join). Go's goroutine scheduler implements work-stealing natively.
+

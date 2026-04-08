@@ -1,0 +1,44 @@
+%-----------------------------------------------------------------------
+\subsection{Algorithm 2: TKO (One-Phase, Utility-List-Based)}
+\label{sec:tko}
+
+TKO~\cite{ref_tku_paper} eliminates Phase~2 by using \textbf{utility-lists} for direct exact utility computation during mining.
+
+\subsubsection{Utility-List Construction and Join}
+
+To mine itemset $X_{ab} = X_a \cup X_b$, TKO joins the utility-lists of $X_a$ and $X_b$:
+
+\begin{algorithm}[H]
+\caption{Utility-List Join for TKO}
+\label{alg:ul_join}
+\begin{algorithmic}[1]
+\Require Utility-lists $UL(X_a)$, $UL(X_b)$, prefix $UL(P)$
+\Ensure Utility-list $UL(X_{ab})$
+\For{each entry $e_a \in UL(X_a)$}
+    \If{$\exists e_b \in UL(X_b)$ s.t. $e_a.tid = e_b.tid$}
+        \If{$P \neq \emptyset$}
+            \State Find $e_p \in UL(P)$ s.t. $e_p.tid = e_a.tid$
+            \State $iutil \leftarrow e_a.iutil + e_b.iutil - e_p.iutil$
+        \Else
+            \State $iutil \leftarrow e_a.iutil + e_b.iutil$
+        \EndIf
+        \State Add $(e_a.tid, iutil, e_b.rutil)$ to $UL(X_{ab})$
+    \EndIf
+\EndFor
+\end{algorithmic}
+\end{algorithm}
+
+\textbf{Key advantage}: $EU(X_{ab}) = \sum_{e \in UL(X_{ab})} e.iutil$ --- exact utility is available immediately, no second database scan needed.
+
+\subsubsection{Pruning Strategies}
+
+\paragraph{RUC (Raising by Utility of Candidates).}
+Whenever $EU(X) \geq \texttt{min\_util\_Border}$, insert $X$ into a size-$k$ min-heap. When full, raise the threshold to the heap's minimum.
+
+\paragraph{RUZ (Reducing by Z-elements).}
+If extension item $z$ has $rutil = 0$ in all utility-list entries, the upper bound $\sum(iutil + rutil)$ is tightened, enabling stronger pruning.
+
+\paragraph{EPB (Exploring Promising Branches first).}
+Extensions are sorted by $\sum(iutil + rutil)$ descending. By exploring strongest branches first, TKO discovers high-utility itemsets early and raises the threshold faster.
+
+\textbf{Pruning condition}: If $\sum_{e \in UL(X)} (e.iutil + e.rutil) < \texttt{min\_util\_Border}$, prune all supersets of $X$.

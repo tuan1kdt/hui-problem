@@ -1,0 +1,31 @@
+\subsection{Basic Definitions}
+
+Let $I = \{I_1, I_2, \ldots, I_m\}$ be a set of distinct items and $D = \{T_1, T_2, \ldots, T_n\}$ be a transactional database. Each transaction $T_r \in D$ is a subset of $I$. Each item $I_j$ has an \textbf{external utility} (unit profit) $p(I_j)$ and an \textbf{internal utility} (quantity) $q(I_j, T_r)$ in transaction $T_r$.
+
+\begin{definition}[Utility of an Item]
+The utility of item $I_j$ in transaction $T_r$ is:
+\begin{equation}
+    EU(I_j, T_r) = p(I_j) \times q(I_j, T_r)
+\end{equation}
+\end{definition}
+
+\begin{definition}[Utility of an Itemset]
+The utility of an itemset $X$ in the database is:
+\begin{equation}
+    EU(X) = \sum_{T_r \in D \wedge X \subseteq T_r} \sum_{I_j \in X} EU(I_j, T_r)
+\end{equation}
+\end{definition}
+
+\begin{definition}[Transaction Utility]
+The transaction utility of $T_r$ is:
+\begin{equation}
+    TU(T_r) = \sum_{I_j \in T_r} EU(I_j, T_r)
+\end{equation}
+\end{definition}
+
+\begin{definition}[Transaction-Weighted Utilization]
+The TWU of an itemset $X$ is:
+\begin{equation}
+    TWU(X) = \sum_{X \subseteq T_r \wedge T_r \in D} TU(T_r)
+\end{equation}
+\end{definition}

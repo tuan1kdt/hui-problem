@@ -1,0 +1,160 @@
+\subsection{Algorithm 3: THUI (One-Phase, Utility-List + LIU Matrix)}
+\label{sec:thui}
+
+THUI~\cite{ref_thui} is a one-phase algorithm that, like TKO, uses utility-lists, but introduces a novel \textbf{Leaf Itemset Utility (LIU)} matrix to achieve more aggressive threshold raising, particularly by leveraging information about leaf-level (longest) itemsets.
+
+\subsubsection{Overview and Key Innovation}
+
+THUI's main contribution is that it computes utility information for \textbf{leaf itemsets} --- itemsets corresponding to complete transaction suffixes in the search tree --- during the database scan phase. This yields tighter lower bounds for the threshold \textit{before} the recursive mining even begins.
+
+\subsubsection{Step 1 -- RIU: Raising by Real Item Utilities}
+
+During the first scan, THUI computes the \textbf{real item utility} (RIU) for each single item:
+\begin{equation}
+    RIU(I_j) = \sum_{T_r \supseteq \{I_j\}} EU(I_j, T_r)
+\end{equation}
+The $k$-th largest $RIU$ value is used to raise the initial threshold.
+
+\begin{algorithm}[H]
+\caption{RIU Computation --- First DB Scan (Ref: \texttt{thui/thui.go}, \texttt{firstScan}, lines 315--352)}
+\label{alg:riu}
+\begin{algorithmic}[1]
+\Require Database $D$, parameter $k$
+\Ensure Initial $minUtility$ raised by RIU
+\For{each transaction $T_r \in D$}
+    \State $TU \leftarrow$ transaction utility of $T_r$
+    \For{each item $I_j$ in $T_r$ with utility $u_j$}
+        \State $TWU[I_j] \leftarrow TWU[I_j] + TU$ \Comment{TWU accumulation}
+        \State $RIU[I_j] \leftarrow RIU[I_j] + u_j$ \Comment{Real item utility}
+    \EndFor
+\EndFor
+\State Sort items by $RIU$ in descending order
+\If{number of items $\geq k$}
+    \State $minUtility \leftarrow k\text{-th largest } RIU \text{ value}$
+\EndIf
+\end{algorithmic}
+\end{algorithm}
+
+\textbf{Theory $\to$ Code}: Since $RIU(I_j) = EU(\{I_j\})$ is the exact utility of a single-item set, and any top-$k$ result has $EU \geq$ the $k$-th largest single-item utility, this is a safe lower bound.
+
+\subsubsection{Step 2 -- Utility-List Construction with LIU Matrix}
+
+During the second scan, THUI builds utility-lists identically to TKO/HUI-Miner. Additionally, it constructs two auxiliary structures:
+
+\paragraph{EUCS Map (optional).} For each pair of items $(I_a, I_b)$, stores accumulated TWU and real 2-item utility. Used similarly to TKO's EUCS pruning.
+
+\begin{algorithm}[H]
+\caption{EUCS Pairwise Utility Update (Ref: \texttt{thui/thui.go}, \texttt{updateEUCSprune}, lines 439--458)}
+\label{alg:eucs}
+\begin{algorithmic}[1]
+\Require Current item pair $(I_a, I_b)$ in revised transaction, $newTWU$
+\For{each item $I_b$ after $I_a$ in the revised transaction}
+    \State $EUCS[I_a][I_b].twu \leftarrow EUCS[I_a][I_b].twu + newTWU$
+    \State $EUCS[I_a][I_b].utility \leftarrow EUCS[I_a][I_b].utility + u_a + u_b$
+\EndFor
+\end{algorithmic}
+\end{algorithm}
+
+\paragraph{LIU Matrix (Leaf Itemset Utility).} The core innovation of THUI. For each item at the end of a transaction (``leaf''), THUI tracks the cumulative utility of complete suffix sequences:
+
+\begin{algorithm}[H]
+\caption{LIU Matrix Update --- Leaf Itemset Utility (Ref: \texttt{thui/thui.go}, \texttt{updateLeafprune}, lines 460--480)}
+\label{alg:liu}
+\begin{algorithmic}[1]
+\Require Item $I_{leaf}$ at position $i$, revised transaction $T'$, utility-lists $ULs$
+\State $cutil \leftarrow u_{leaf}$ \Comment{Cumulative utility starts from leaf}
+\State $leafIdx \leftarrow$ index of $I_{leaf}$ in $ULs$ (sorted by TWU)
+\For{$j \leftarrow i-1$ \textbf{downto} $0$} \Comment{Walk backwards}
+    \State $I_{prev} \leftarrow T_{j}.item$
+    \State $prevIdx \leftarrow leafIdx - 1$
+    \If{$ULs_{prevIdx}.item \neq I_{prev}$}
+        \State \textbf{break} \Comment{Not consecutive in sort order}
+    \EndIf
+    \State $cutil \leftarrow cutil + u_{prev}$
+    \State $LIU[leafIdx][prevIdx] \leftarrow LIU[leafIdx][prevIdx] + cutil$
+    \State $leafIdx \leftarrow prevIdx$
+\EndFor
+\end{algorithmic}
+\end{algorithm}
+
+\textbf{Theory}: The LIU matrix captures the utility of \textit{complete consecutive suffix itemsets} in transactions. For a transaction $T = \{a, b, c, d, e\}$ (sorted by TWU), the leaf item is $e$, and consecutive suffixes like $\{d,e\}$, $\{c,d,e\}$ are tracked. Their accumulated utilities across all transactions provide tight lower bounds.
+
+\subsubsection{Step 3 -- Threshold Raising via LIU-E and LIU-LB}
+
+Before recursive mining begins, THUI uses the LIU matrix to raise the threshold with two sub-strategies:
+
+\paragraph{LIU-Exact (LIU-E).}
+Exact utility values stored in the LIU matrix are directly inserted into a size-$k$ priority queue:
+
+\begin{algorithm}[H]
+\caption{LIU-Exact Threshold Raising (Ref: \texttt{thui/thui.go}, \texttt{raisingThresholdLeaf}, lines 686--692)}
+\label{alg:liue}
+\begin{algorithmic}[1]
+\For{each entry $(leafIdx, startIdx) \to value$ in $LIU$}
+    \If{$value \geq minUtility$}
+        \State \textproc{InsertTopKHeap}$(leafHeap, value)$ \Comment{Raise threshold}
+    \EndIf
+\EndFor
+\If{$|leafHeap| \geq k$ and $leafHeap.min > minUtility$}
+    \State $minUtility \leftarrow leafHeap.min$
+\EndIf
+\end{algorithmic}
+\end{algorithm}
+
+\paragraph{LIU-Lower Bound (LIU-LB).}
+THUI generates combinatorial lower bounds by subtracting subsets of items from known leaf utilities:
+
+\begin{algorithm}[H]
+\caption{LIU-LB Threshold Raising (Ref: \texttt{thui/thui.go}, \texttt{raisingThresholdLeaf}, lines 694--721)}
+\label{alg:liulb}
+\begin{algorithmic}[1]
+\Require Leaf entry with range $[st, end)$ and total utility $V$
+\For{$i \leftarrow st+1$ \textbf{to} $end-2$} \Comment{Remove one item}
+    \State $V_1 \leftarrow V - EU(ULs[i])$
+    \If{$V_1 \geq minUtility$}
+        \State \textproc{InsertTopKHeap}$(leafHeap, V_1)$
+    \EndIf
+    \For{$j \leftarrow i+1$ \textbf{to} $end-2$} \Comment{Remove two items}
+        \State $V_2 \leftarrow V - EU(ULs[i]) - EU(ULs[j])$
+        \If{$V_2 \geq minUtility$}
+            \State \textproc{InsertTopKHeap}$(leafHeap, V_2)$
+        \EndIf
+    \EndFor
+\EndFor
+\end{algorithmic}
+\end{algorithm}
+
+\textbf{Theory}: If a leaf itemset $\{c,d,e\}$ has accumulated utility $V$, then the subset $\{c,e\}$ (removing $d$) has utility $\geq V - EU(\{d\})$. This provides additional lower bounds without any database scanning.
+
+\subsubsection{Step 4 -- Recursive Mining (THUI procedure)}
+
+The core mining is structurally identical to HUI-Miner/TKO --- recursive utility-list joins with on-the-fly threshold raising:
+
+\begin{algorithm}[H]
+\caption{THUI Recursive Mining (Ref: \texttt{thui/thui.go}, \texttt{thui}, lines 488--522)}
+\label{alg:thui_mine}
+\begin{algorithmic}[1]
+\Require Prefix $P$, prefix utility-list $pUL$, extension utility-lists $ULs$
+\For{$i \leftarrow |ULs|-1$ \textbf{downto} $0$} \Comment{Check single extensions}
+    \If{$ULs_i.sumIutils \geq minUtility$}
+        \State \textproc{SaveToTopK}$(P \cup \{ULs_i.item\},\; ULs_i)$
+    \EndIf
+\EndFor
+\For{$i \leftarrow |ULs|-2$ \textbf{downto} $0$} \Comment{Generate multi-item extensions}
+    \State $X \leftarrow ULs_i$
+    \If{$X.sumIutils + X.sumRutils \geq minUtility$} \Comment{Pruning}
+        \State $exULs \leftarrow \emptyset$
+        \For{$j \leftarrow i+1$ \textbf{to} $|ULs|-1$}
+            \State $Y \leftarrow ULs[j]$
+            \State $Z \leftarrow \textproc{Construct}(pUL, X, Y)$ \Comment{Join utility-lists}
+            \If{$Z \neq \textit{null}$}
+                \State $exULs \leftarrow exULs \cup \{Z\}$
+            \EndIf
+        \EndFor
+        \State \textproc{THUI-Mine}$(P \cup \{X.item\}, X, exULs)$ \Comment{Recurse}
+    \EndIf
+\EndFor
+\end{algorithmic}
+\end{algorithm}
+
+The \textproc{SaveToTopK} method maintains a size-$k$ min-heap and raises $minUtility$ whenever the heap is full (Ref: \texttt{thui/thui.go}, \texttt{save}, lines 594--614).

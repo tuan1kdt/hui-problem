@@ -1,0 +1,27 @@
+\subsection{Parallelizing THUI}
+
+\paragraph{RIU Computation (MapReduce).}
+Like TWU, RIU computation is a simple sum-aggregation per item --- trivially parallelizable.
+
+\paragraph{LIU Matrix Construction (MapReduce).}
+Each transaction contributes independently to the LIU matrix. Mappers process partitions and emit (leafIndex, suffixIndex, utility); reducers sum:
+
+\begin{algorithm}[H]
+\caption{MapReduce for LIU Matrix}
+\begin{algorithmic}[1]
+\State \textbf{Map}$(partition_i)$:
+\For{each $T_r \in partition_i$}
+    \For{each leaf-suffix pair $(leaf, start, cutil)$}
+        \State emit$((leaf, start),\; cutil)$
+    \EndFor
+\EndFor
+\State \textbf{Reduce}$((leaf, start),\; [c_1, \ldots])$: sum $\leftarrow \sum c_i$
+\end{algorithmic}
+\end{algorithm}
+
+\paragraph{LIU-LB Threshold Raising (Fork/Join).}
+The nested loop in LIU-LB (Algorithm~\ref{alg:liulb}) iterates over combinatorial subsets. Each outer iteration is independent and can be forked into separate threads.
+
+\paragraph{Recursive Mining (Fork/Join).}
+Identical to TKO --- the THUI mining procedure's extension loop (Algorithm~\ref{alg:thui_mine}) can be parallelized by forking each extension branch.
+

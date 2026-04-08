@@ -1,0 +1,24 @@
+\subsection{Key Properties}
+
+\begin{theorem}[Transaction-Weighted Downward Closure -- TWDC]
+For any itemsets $X \subseteq Y$: $TWU(Y) \leq TWU(X)$. Furthermore, $EU(X) \leq TWU(X)$.
+\end{theorem}
+
+This property is critical because, unlike $EU(X)$, $TWU(X)$ is anti-monotone. If $TWU(X) < \texttt{min\_util}$, then all supersets of $X$ can be safely pruned.
+
+\begin{definition}[Minimum Item Utility -- MIU]
+\begin{equation}
+    MIU(X) = \left(\sum_{I_j \in X} \min_{T_r \supseteq X} \{EU(I_j, T_r)\}\right) \times SC(X)
+\end{equation}
+where $SC(X)$ is the support count of $X$. $MIU(X)$ is a \textbf{lower bound} of $EU(X)$, used to safely raise the threshold.
+\end{definition}
+
+\begin{definition}[Utility-List]
+For an itemset $X$, its utility-list $UL(X)$ contains one entry $(tid, iutil, rutil)$ per transaction $T_r$ where $X \subseteq T_r$:
+\begin{itemize}
+    \item $tid$: transaction identifier
+    \item $iutil = EU(X, T_r)$: the exact utility of $X$ in $T_r$
+    \item $rutil$: sum of utilities of items ordered after $X$ in $T_r$
+\end{itemize}
+Key property: $EU(X) = \sum_{e \in UL(X)} e.iutil$ gives the exact utility directly.
+\end{definition}

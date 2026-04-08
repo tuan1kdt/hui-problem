@@ -1,0 +1,36 @@
+\subsection{Summary of Parallelization Opportunities}
+
+\begin{table}[H]
+\caption{Parallelization opportunities per algorithm}\label{tab:par_summary}
+\centering
+\begin{tabular}{@{}llll@{}}
+\toprule
+\textbf{Step} & \textbf{TKU} & \textbf{TKO} & \textbf{THUI} \\
+\midrule
+DB Scan / TWU & MapReduce & MapReduce & MapReduce \\
+Threshold pre-raise & PE: MapReduce & --- & RIU: MapReduce \\
+ & & &  LIU: MapReduce \\
+ & & &  LIU-LB: Fork/Join \\
+Tree/List build & Pipeline & Fork/Join & Fork/Join \\
+Recursive mining & Fork/Join & Fork/Join & Fork/Join \\
+Candidate verify & MapReduce & N/A & N/A \\
+Shared mutable state & TopK Heap & TopK Heap & TopK Heap \\
+Sync mechanism & RWMutex & RWMutex & RWMutex \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\caption{Best parallelism model by scenario}\label{tab:model_choice}
+\centering
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{Scenario} & \textbf{Model} & \textbf{Rationale} \\
+\midrule
+Single machine, DB fits RAM & Fork/Join & Low overhead, work stealing \\
+Single machine, DB $>$ RAM & Streaming + goroutines & Memory-efficient \\
+Cluster, DB distributed & MapReduce (Spark) & Horizontal scaling \\
+Deep recursive search & Fork/Join + semaphore & Limit goroutine explosion \\
+\bottomrule
+\end{tabular}
+\end{table}

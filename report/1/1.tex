@@ -1,0 +1,17 @@
+%=======================================================================
+\section{Introduction}
+\label{sec:intro}
+%=======================================================================
+
+Traditional frequent itemset mining (FIM) assumes all items have equal importance and uses a binary model (present or absent). However, in real-world retail analytics, items have different unit profits and appear in varying quantities. \textbf{High Utility Itemset Mining (HUIM)}~\cite{ref_hui_survey} addresses this limitation by assigning external utilities (unit profit) and internal utilities (purchase quantity) to items.
+
+A major challenge in HUIM is setting the minimum utility threshold (\texttt{min\_util}). Setting it too low produces an overwhelming number of results; setting it too high yields none. The \textbf{top-$k$} formulation~\cite{ref_tku_paper} elegantly solves this by asking the user to specify only the desired number of results $k$, while the algorithm automatically determines the appropriate threshold.
+
+In this paper, we study and compare three representative algorithms:
+\begin{enumerate}
+    \item \textbf{TKU}~\cite{ref_tku_paper}: A two-phase algorithm using UP-Tree with five threshold-raising strategies (PE, NU, MD, MC, SE).
+    \item \textbf{TKO}~\cite{ref_tku_paper}: A one-phase algorithm using utility-lists with strategies RUC, RUZ, and EPB.
+    \item \textbf{THUI}~\cite{ref_thui}: A one-phase algorithm using utility-lists enhanced with a Leaf Itemset Utility (LIU) matrix for more effective threshold raising.
+\end{enumerate}
+
+All three algorithms aim to mine top-$k$ high utility itemsets but employ fundamentally different data structures and pruning strategies. The remainder of this paper is organized as follows: Section~\ref{sec:prelim} defines the problem formally. Section~\ref{sec:algorithms} details each algorithm with code-to-theory mapping. Section~\ref{sec:comparison} presents experimental comparisons. Section~\ref{sec:parallel} analyzes parallelization opportunities. Section~\ref{sec:conclusion} concludes.

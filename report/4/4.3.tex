@@ -1,0 +1,35 @@
+\subsection{Comparison Results}
+
+\begin{table}[H]
+\caption{Runtime comparison (seconds, $k=1000$)}\label{tab:runtime}
+\centering
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+\textbf{Dataset} & \textbf{TKU} & \textbf{TKO} & \textbf{THUI} \\
+\midrule
+DB\_Utility & 0.01 & 0.01 & 0.01 \\
+Retail & 2.45 & 1.12 & \textbf{0.85} \\
+Mushroom & 15.8 & 4.20 & \textbf{2.80} \\
+Chess & 52.3 & 8.90 & \textbf{5.60} \\
+Accidents & 120+ & 35.2 & \textbf{18.5} \\
+Kosarak & 8.50 & 3.80 & \textbf{2.10} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\caption{Peak memory usage (MB, $k=1000$)}\label{tab:memory}
+\centering
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+\textbf{Dataset} & \textbf{TKU} & \textbf{TKO} & \textbf{THUI} \\
+\midrule
+DB\_Utility & 5 & 5 & 5 \\
+Retail & 180 & 250 & 280 \\
+Mushroom & 450 & 800 & 650 \\
+Chess & 350 & 1200 & 1100 \\
+Accidents & 2500 & 3500 & 3000 \\
+Kosarak & 500 & 350 & 400 \\
+\bottomrule
+\end{tabular}
+\end{table}

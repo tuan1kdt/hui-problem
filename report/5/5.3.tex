@@ -1,0 +1,10 @@
+\subsection{Parallelizing TKO}
+
+\paragraph{Utility-List Construction (Fork/Join).}
+Initial utility-lists for single items can be built in parallel by partitioning the database, then merging partial lists.
+
+\paragraph{Recursive Search (Fork/Join).}
+Each extension branch in the recursive search is independent and can be forked. Work-stealing schedulers naturally handle unbalanced branches.
+
+\paragraph{Challenge.} Joining utility-lists requires the parent's list, creating dependencies that limit parallelism at deeper recursion levels.
+

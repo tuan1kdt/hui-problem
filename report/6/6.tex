@@ -1,0 +1,24 @@
+%=======================================================================
+\section{Conclusion}
+\label{sec:conclusion}
+%=======================================================================
+
+We compared three algorithms for mining top-$k$ high utility itemsets:
+
+\begin{enumerate}
+    \item \textbf{TKU} is the simplest conceptually but suffers from two-phase overhead. Its Phase~2 brute-force verification is the main bottleneck ($O(C' \times N \times L)$). However, Phase~1 strategies (PE, NU, MD, MC) are elegant.
+
+    \item \textbf{TKO} eliminates Phase~2 using utility-lists for exact utility computation. It trades fewer database scans for higher memory on dense datasets. Strategies RUC, RUZ, EPB work synergistically.
+
+    \item \textbf{THUI} achieves the best runtime by raising the threshold aggressively \textit{before} mining via LIU-E and LIU-LB. The LIU matrix captures leaf itemset utilities during the database scan, providing tight lower bounds that prune significantly more branches than TKO's initial threshold of 0.
+\end{enumerate}
+
+For parallelization:
+\begin{itemize}
+    \item Database scanning and TWU/RIU computation are embarrassingly parallel via \textbf{MapReduce}.
+    \item Recursive mining (UPGrowth, TKO search, THUI search) fits \textbf{Fork/Join} with work-stealing.
+    \item The shared mutable threshold requires read-write locking with double-check pattern. Keeping the database \textbf{immutable} and mining state \textbf{local per thread} is the key design principle.
+    \item THUI's LIU-LB combinatorial loop and TKU's Phase~2 offer the richest parallelization opportunities.
+\end{itemize}
+
+Our Go re-implementation demonstrates that modern languages with built-in concurrency primitives provide efficient frameworks for parallelizing these algorithms without heavyweight distributed systems.

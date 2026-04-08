@@ -1,0 +1,126 @@
+\subsection{Algorithm 1: TKU (Two-Phase, Tree-Based)}
+\label{sec:tku}
+
+TKU~\cite{ref_tku_paper} operates in two phases. Phase~1 builds a compressed UP-Tree and generates candidate itemsets (PKHUIs) using five threshold-raising strategies. Phase~2 verifies candidates by scanning the original database to compute exact utilities.
+
+\subsubsection{Phase 1: Candidate Generation via UP-Tree}
+
+\paragraph{Step 1 -- Database Scan and TWU Computation.}
+The first database scan computes $TWU$ for each item, and the minimum/maximum item utilities ($miu$, $mau$) needed by later pruning strategies.
+
+\begin{algorithm}[H]
+\caption{TWU, MIU, MAU Computation --- First DB Scan (Ref: \texttt{tku/tku.go}, \texttt{preEvaluation}, lines 216--269)}
+\label{alg:twu}
+\begin{algorithmic}[1]
+\Require Database $D$
+\Ensure $TWU[\cdot]$, $MinUtil[\cdot]$, $MaxUtil[\cdot]$ for each item
+\For{each transaction $T_r \in D$}
+    \State Parse $T_r$ into items $\{I_1, \ldots, I_w\}$ and utilities $\{u_1, \ldots, u_w\}$
+    \State $TU \leftarrow$ transaction utility of $T_r$
+    \For{each item $I_j$ in $T_r$ with utility $u_j$}
+        \If{$MinUtil[I_j] = 0$ \textbf{or} $MinUtil[I_j] > u_j$}
+            \State $MinUtil[I_j] \leftarrow u_j$ \Comment{Track minimum item utility}
+        \EndIf
+        \If{$MaxUtil[I_j] < u_j$}
+            \State $MaxUtil[I_j] \leftarrow u_j$ \Comment{Track maximum item utility}
+        \EndIf
+        \State $TWU[I_j] \leftarrow TWU[I_j] + TU$ \Comment{Accumulate TWU}
+    \EndFor
+\EndFor
+\end{algorithmic}
+\end{algorithm}
+
+\textbf{Theory $\to$ Code}: This implements Definition~4 ($TWU$) and collects $miu(I_j) = \min_{T_r}\{EU(I_j,T_r)\}$ used by strategies MD and MC.
+
+\paragraph{Step 2 -- Strategy PE (Pre-Evaluation).}
+During the first scan, TKU also builds a Pre-Evaluation Matrix (PEM) using only the first item of each transaction paired with subsequent items:
+\begin{equation}
+    PEM[I_1][I_i] \mathrel{+}= EU(\{I_1, I_i\}, T_r)
+\end{equation}
+The $k$-th largest value in PEM safely raises \texttt{min\_util\_Border} from 0, since PEM values are lower bounds.
+
+\begin{algorithm}[H]
+\caption{PE Strategy --- Pre-Evaluation Matrix (Ref: \texttt{tku/tku.go}, \texttt{preEvaluation}+\texttt{getInitialUtility}, lines 216--311)}
+\label{alg:pe}
+\begin{algorithmic}[1]
+\For{each transaction $T_r = \{I_1, I_2, \ldots, I_w\}$}
+    \For{$i \leftarrow 2$ \textbf{to} $w$}
+        \State $PEM[I_1][I_i] \leftarrow PEM[I_1][I_i] + EU(I_1, T_r) + EU(I_i, T_r)$
+    \EndFor
+\EndFor
+\State $minUtil \leftarrow k\text{-th largest value in } PEM$
+\end{algorithmic}
+\end{algorithm}
+
+\paragraph{Step 3 -- UP-Tree Construction.}
+Transactions are filtered (items with $TWU < \texttt{min\_util\_Border}$ removed), sorted by TWU descending, and inserted into the UP-Tree. Each node stores: item name, count, and node utility ($Nu$). The UP-Tree compresses $n$ transactions into shared-prefix paths, reducing memory from $O(n \cdot w)$ to $O(|\text{tree}|)$.
+
+\paragraph{Step 4 -- Strategy MD (MIU of Descendants).}
+After the tree is built, TKU examines parent-descendant pairs to compute lower bounds:
+\begin{equation}
+    MIU(\{\alpha, \beta\}) = (miu(\alpha) + miu(\beta)) \times SC_{\text{tree}}(\alpha, \beta)
+\end{equation}
+
+\begin{algorithm}[H]
+\caption{MD Strategy --- MIU of Descendants (Ref: \texttt{tku/tku.go}, \texttt{runPhase1CandidateGeneration}, lines 126--137)}
+\label{alg:md}
+\begin{algorithmic}[1]
+\For{each child node $c$ of $\textit{tree.root}$}
+    \State $SumDS[\cdot] \leftarrow$ count of each item among descendants of $c$
+    \State $\alpha \leftarrow c.item$
+    \For{each item $\beta$ where $SumDS[\beta] \neq 0$ and $\beta \neq \alpha$}
+        \State $value \leftarrow (miu[\alpha] + miu[\beta]) \times SumDS[\beta]$
+        \State \textproc{UpdateTopKHeap}$(DSHeap, value)$ \Comment{Raise threshold}
+    \EndFor
+\EndFor
+\end{algorithmic}
+\end{algorithm}
+
+\paragraph{Step 5 -- UPGrowth with Strategy MC (MIU of Candidates).}
+The recursive UPGrowth procedure traverses the tree FP-Growth-style. For each candidate $X$ generated, MC computes $MIU(X)$ and inserts it into a size-$k$ min-heap. When the heap is full, its minimum becomes the new threshold.
+
+\begin{algorithm}[H]
+\caption{MC Strategy --- MIU of Candidates (Ref: \texttt{tku/tku.go}, \texttt{updateNodeCountHeap}, lines 378--393)}
+\label{alg:mc}
+\begin{algorithmic}[1]
+\Require Candidate $X$ with $SumMiu$, support count $SC$
+\State $MIU \leftarrow SumMiu \times SC$
+\If{$MIU > globalMinUtil$}
+    \State \textproc{UpdateTopKHeap}$(CandidateHeap, MIU)$
+\EndIf
+\end{algorithmic}
+\end{algorithm}
+
+\textbf{Safety guarantee}: Since $MIU(X) \leq EU(X)$, raising the threshold using $MIU$ values never misses true top-$k$ results.
+
+\subsubsection{Phase 2: Exact Utility Verification with Strategy SE}
+
+Phase~2 loads the entire original database into RAM as two parallel arrays (\texttt{HDB[]} for items, \texttt{BNF[]} for utilities), then verifies each candidate:
+
+\begin{algorithm}[H]
+\caption{Phase 2 --- Exact Utility Verification (Ref: \texttt{tku/phase2.go}, \texttt{readCandidateItemsets}, lines 125--193)}
+\label{alg:phase2}
+\begin{algorithmic}[1]
+\Require Sorted candidates $\mathcal{C}$ (descending by estimated utility), database $D$
+\Ensure Top-$k$ HUIs with exact utilities
+\For{each candidate $X \in \mathcal{C}$}
+    \If{$X.estUtil < minUtility$}
+        \State \textbf{skip} $X$ \Comment{SE: early termination}
+    \EndIf
+    \State $exactUtil \leftarrow 0$
+    \For{each transaction $T_r \in D$}
+        \If{$X \subseteq T_r$}
+            \State $exactUtil \leftarrow exactUtil + EU(X, T_r)$ \Comment{Sum exact utilities}
+        \EndIf
+    \EndFor
+    \If{$exactUtil \geq minUtility$}
+        \State Insert $(X, exactUtil)$ into Top-$k$ Heap
+        \State Update $minUtility$ from heap minimum
+    \EndIf
+\EndFor
+\end{algorithmic}
+\end{algorithm}
+
+\textbf{Strategy SE}: Candidates are sorted in descending order by estimated utility before verification. Strong candidates verified first rapidly raise $minUtility$, allowing weaker candidates to be skipped.
+
+\textbf{Complexity}: Phase~2 is $O(C' \times N \times L)$ where $C'$ is candidates verified, $N$ transaction count, $L$ average candidate length. This is TKU's main bottleneck.

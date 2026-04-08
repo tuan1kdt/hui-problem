@@ -1,0 +1,79 @@
+\subsection{Parallelizing TKU}
+
+\subsubsection{Phase 1: TWU Computation \& Tree Mining}
+
+\paragraph{TWU Computation (MapReduce).}
+\begin{algorithm}[H]
+\caption{MapReduce for TWU Computation}
+\begin{algorithmic}[1]
+\State \textbf{Map}$(T_r)$: \textbf{for each} $I_j \in T_r$ \textbf{do} emit$(I_j,\; TU(T_r))$
+\State \textbf{Reduce}$(I_j,\; [v_1, v_2, \ldots])$: $TWU(I_j) \leftarrow \sum v_i$
+\end{algorithmic}
+\end{algorithm}
+
+With $P$ partitions, each mapper processes $N/P$ transactions --- linear speedup.
+
+\paragraph{UPGrowth Mining (Fork/Join).}
+Each item in the header table produces an independent branch. Branches can be processed in parallel by forking each into a separate thread/goroutine:
+
+\begin{algorithm}[H]
+\caption{Parallel UPGrowth via Fork/Join}
+\begin{algorithmic}[1]
+\For{each item $I_j$ in header table} \Comment{Independent branches}
+    \State \textbf{fork} $\to$ \textproc{ProcessBranch}$(I_j, DB_{imm}, localState_j, topK)$
+\EndFor
+\State \textbf{join all} \Comment{Wait for all branches to complete}
+\end{algorithmic}
+\end{algorithm}
+
+\paragraph{Immutability for safety.}
+The database and TWU arrays are \textbf{immutable} after construction --- safe to share across threads. Only the top-$k$ heap is mutable shared state, protected with a read-write lock and double-check pattern:
+
+\begin{algorithm}[H]
+\caption{Thread-Safe Top-$k$ Threshold Update (Double-Check Lock)}
+\begin{algorithmic}[1]
+\Require New utility value $u$
+\State \textbf{acquire read-lock}
+\If{$u \leq minUtil$}
+    \State \textbf{release read-lock}; \textbf{return} false \Comment{Fast rejection}
+\EndIf
+\State \textbf{release read-lock}
+\State \textbf{acquire write-lock}
+\If{$u \leq minUtil$}
+    \State \textbf{release write-lock}; \textbf{return} false \Comment{Double-check}
+\EndIf
+\State Insert $u$ into heap; update $minUtil$
+\State \textbf{release write-lock}
+\State \textbf{return} true
+\end{algorithmic}
+\end{algorithm}
+
+\subsubsection{Phase 2: Candidate Verification (MapReduce)}
+
+Phase~2 is the most parallelizable step:
+
+\begin{algorithm}[H]
+\caption{MapReduce for Phase 2 Verification}
+\begin{algorithmic}[1]
+\State \textbf{Map}$(partition_i,\; candidates)$:
+\For{each $T_r \in partition_i$, each candidate $X$}
+    \If{$X \subseteq T_r$} \State emit$(X,\; EU(X, T_r))$ \EndIf
+\EndFor
+\State \textbf{Reduce}$(X,\; [u_1, \ldots])$: $EU(X) \leftarrow \sum u_i$
+\end{algorithmic}
+\end{algorithm}
+
+\textbf{When DB exceeds RAM}: Use streaming batch --- scan DB once, verify all candidates simultaneously per chunk:
+
+\begin{algorithm}[H]
+\caption{Streaming Batch Verification (Out-of-Core)}
+\begin{algorithmic}[1]
+\For{each transaction $T_r$ read from disk (streaming)}
+    \For{each candidate $X \in \mathcal{C}$} \Comment{Verify ALL at once}
+        \If{$X \subseteq T_r$}
+            \State $exactUtil[X] \leftarrow exactUtil[X] + EU(X, T_r)$
+        \EndIf
+    \EndFor
+\EndFor
+\end{algorithmic}
+\end{algorithm}

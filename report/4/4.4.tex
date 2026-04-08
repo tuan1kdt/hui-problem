@@ -1,0 +1,26 @@
+\subsection{Analysis}
+
+\paragraph{TKU} is the slowest due to its inherent two-phase design. Phase~2 requires scanning the entire database for each candidate, with complexity $O(C' \times N \times L)$. However, TKU has the lowest memory usage on dense datasets because the UP-Tree compresses data effectively and Phase~2 does not maintain utility-lists.
+
+\paragraph{TKO} eliminates Phase~2 entirely, computing exact utilities via utility-list joins. However, on dense datasets (Chess, Accidents), the number of utility-list entries explodes, consuming significant memory. TKO's strategies (RUC, RUZ, EPB) are effective but raise the threshold only during mining.
+
+\paragraph{THUI} achieves the best runtime by aggressively raising the threshold \textit{before} mining begins. The LIU-E strategy provides exact leaf utility values, while LIU-LB generates combinatorial lower bounds from subsets. Together, they raise $minUtility$ significantly higher than TKO's starting point, pruning more branches in the recursive search. THUI's memory overhead is slightly higher than TKO due to the LIU matrix, but the runtime improvement more than compensates.
+
+\begin{table}[H]
+\caption{Summary of algorithm characteristics}\label{tab:summary}
+\centering
+\begin{tabular}{@{}llll@{}}
+\toprule
+\textbf{Feature} & \textbf{TKU} & \textbf{TKO} & \textbf{THUI} \\
+\midrule
+Phases & 2 & 1 & 1 \\
+Data structure & UP-Tree & Utility-List & Utility-List + LIU \\
+DB scans & 3+ (2 build + N verify) & 2 & 2 \\
+Exact utility & Phase 2 only & During mining & During mining \\
+Threshold strategies & PE, NU, MD, MC, SE & RUC, RUZ, EPB & RIU, EUCS, LIU-E, LIU-LB \\
+Initial threshold & Moderate (PE) & 0 (or low) & High (RIU + LIU) \\
+Memory & Low--Moderate & High (dense) & High (dense) + LIU \\
+Best for & Small--medium data & Sparse data & Dense \& large data \\
+\bottomrule
+\end{tabular}
+\end{table}
