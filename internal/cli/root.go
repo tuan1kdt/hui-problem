@@ -20,10 +20,11 @@ func NewRootCmd() *cobra.Command {
 	root := &cobra.Command{
 		Use:   "hui-problem",
 		Short: "High-utility itemset mining utilities",
-		Long:  "CLI for high-utility pattern mining algorithms (TKU, TKO, and more).",
+		Long:  "CLI for high-utility pattern mining algorithms (TKU, TKO, THUI, and more).",
 	}
 	root.AddCommand(newTKUCmd())
 	root.AddCommand(newPTKUCmd())
 	root.AddCommand(newTKOCmd())
+	root.AddCommand(newTHUICmd())
 	return root
 }
