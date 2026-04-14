@@ -1,16 +1,18 @@
-.PHONY: build clean test-all help
+.PHONY: build clean test-all help report benchmark
 
 # Detect OS using Go's GOOS
 GOOS ?= $(shell go env GOOS)
 GOARCH ?= $(shell go env GOARCH)
 
 # Set binary name and commands based on OS
+BUILD_DIR = build
+
 ifeq ($(GOOS),windows)
-	BINARY_NAME = hui-problem.exe
+	BINARY_NAME = $(BUILD_DIR)/hui-problem.exe
 	RM_CMD = del
 	MKDIR_CMD = mkdir
 else
-	BINARY_NAME = hui-problem
+	BINARY_NAME = $(BUILD_DIR)/hui-problem
 	RM_CMD = rm -f
 	MKDIR_CMD = mkdir -p
 endif
@@ -18,8 +20,14 @@ endif
 # Default test dataset
 TESTDATA ?= testdata/DB_Utility.txt
 
+# Benchmark settings
+BENCH_DATASETS ?= testdata/mushroom_utility_SPMF.txt testdata/retail_utility_spmf.txt
+BENCH_K ?= 1,10,100,1000
+BENCH_TIMEOUT ?= 600
+
 # Build the CLI binary
 build:
+	@$(MKDIR_CMD) $(BUILD_DIR)
 	go build -o $(BINARY_NAME) ./cmd/hui-problem
 
 # Run all algorithms on the test dataset with separate output files
@@ -41,15 +49,32 @@ run: build
 	@$(MKDIR_CMD) outputs
 	$(BINARY_NAME) $(ALGO) -i $(TESTDATA) -o outputs/$(ALGO)-output.txt -k 10
 
+# Run benchmark: rebuild binary, run all experiments, print comparison tables
+benchmark: build
+	@$(MKDIR_CMD) outputs
+	python3 script/benchmark.py \
+		--binary $(BINARY_NAME) \
+		--datasets $(BENCH_DATASETS) \
+		--k-values $(BENCH_K) \
+		--output-dir outputs \
+		--timeout $(BENCH_TIMEOUT)
+
 # Clean up generated files
 clean:
-	$(RM_CMD) $(BINARY_NAME)
 ifeq ($(GOOS),windows)
+	rmdir /s /q $(BUILD_DIR) 2>nul || true
 	rmdir /s /q outputs 2>nul || true
 else
-	rm -rf outputs/
+	rm -rf $(BUILD_DIR)/ outputs/
 endif
 	$(RM_CMD) *-output.txt
+
+# Generate PDF report from LaTeX
+report:
+	@echo "Building PDF report from LaTeX..."
+	@cd report && pdflatex -interaction=nonstopmode -halt-on-error main.tex > /dev/null 2>&1
+	@cd report && pdflatex -interaction=nonstopmode -halt-on-error main.tex > /dev/null 2>&1
+	@echo "✓ Report generated successfully: report/main.pdf"
 
 # Show help
 help:
@@ -57,11 +82,16 @@ help:
 	@echo "  build       - Build the CLI binary"
 	@echo "  test-all    - Run all algorithms with separate output files"
 	@echo "  run         - Run a single algorithm (ALGO=tku|tko|ptku|thui)"
+	@echo "  benchmark   - Run benchmark experiments and print comparison tables"
+	@echo "  report      - Generate PDF report from LaTeX sources"
 	@echo "  clean       - Remove generated files"
 	@echo "  help        - Show this help message"
 	@echo ""
 	@echo "Variables:"
-	@echo "  TESTDATA - Path to test dataset (default: testdata/DB_Utility.txt)"
+	@echo "  TESTDATA        - Path to test dataset (default: testdata/DB_Utility.txt)"
+	@echo "  BENCH_DATASETS  - Space-separated dataset paths for benchmark"
+	@echo "  BENCH_K         - Comma-separated k values (default: 1,10,100,1000)"
+	@echo "  BENCH_TIMEOUT   - Timeout per run in seconds (default: 600)"
 	@echo ""
 	@echo "Examples:"
 	@echo "  make build"
@@ -69,3 +99,5 @@ help:
 	@echo "  make test-all TESTDATA=testdata/Chicago_Crimes_2001_to_2017_utility.txt"
 	@echo "  make run ALGO=tku"
 	@echo "  make run ALGO=thui TESTDATA=testdata/Chicago_Crimes_2001_to_2017_utility.txt"
+	@echo "  make benchmark"
+	@echo "  make benchmark BENCH_DATASETS=testdata/DB_Utility.txt BENCH_K=3,5,10"

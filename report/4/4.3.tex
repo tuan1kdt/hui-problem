@@ -1,153 +1,330 @@
 \subsection{Results}
-Dataset: Chicago\_Crimes\_2001\_to\_2017\_utility
-\newline
+
+% Helper macro for dual Y-axis chart (time left, memory right)
+% Usage: per algorithm per dataset
+
+% ============================================================
+% Dataset 1: Chicago Crimes
+% ============================================================
+\subsubsection*{Dataset: Chicago\_Crimes\_2001\_to\_2017\_utility}
 \url{https://www.philippe-fournier-viger.com/spmf/publicdatasets/Chicago_Crimes_2001_to_2017_utility.txt}
-\begin{table}[H]
-\caption{TKU experiment result}\label{tab:experiment}
-\centering
-\begin{tabular}{@{}lrrr@{}}
-\toprule
-\textbf{k} & \textbf{Runtime(s)} & \textbf{Memory Usage(MB)}  \\
-\midrule
-1 & 3.60 & 302.73  \\
-10 & 4.75 & 293.11   \\
-100 & 12.72 & 313.25  \\
-1000 & 92.05 & 313.46  \\
-\bottomrule
-\end{tabular}
-\end{table}
 
-\begin{table}[H]
-\caption{TKO experiment result}\label{tab:experiment}
+\begin{figure}[H]
 \centering
-\begin{tabular}{@{}lrrr@{}}
-\toprule
-\textbf{k} & \textbf{Runtime(s)} & \textbf{Memory Usage(MB)}  \\
-\midrule
-1 & 4.29 & 256.87  \\
-10 & 5.09 & 263.43   \\
-100 & 5.55 & 252.01  \\
-1000 & 6.74 & 261.42  \\
-\bottomrule
-\end{tabular}
-\end{table}
+\begin{tikzpicture}
+\begin{axis}[
+    axis y line*=left,
+    xlabel={Top-$k$},
+    ylabel={Runtime (s)},
+    ylabel style={color=blue},
+    yticklabel style={color=blue},
+    xmode=log, xtick={1,10,100,1000}, xticklabels={1,10,100,1000},
+    width=4.5cm, height=4.5cm,
+    title={TKU --- Chicago Crimes},
+    grid=major, ymin=0,
+]
+\addplot[blue, mark=o, line width=1.5pt] coordinates {
+    (1,3.60)(10,4.75)(100,12.72)(1000,92.05)
+};
+\end{axis}
+\begin{axis}[
+    axis y line*=right, axis x line=none,
+    ylabel={Memory (MB)},
+    ylabel style={color=red},
+    yticklabel style={color=red},
+    legend style={at={(0.02,0.02)},anchor=south west},
+    xmode=log, width=4.5cm, height=4.5cm, ymin=0,
+]
+\addplot[red, mark=square, dashed, line width=1.5pt] coordinates {
+    (1,302.73)(10,293.11)(100,313.25)(1000,313.46)
+};
+\end{axis}
+\end{tikzpicture}
+\hfill
+\begin{tikzpicture}
+\begin{axis}[
+    axis y line*=left,
+    xlabel={Top-$k$},
+    ylabel={Runtime (s)},
+    ylabel style={color=blue},
+    yticklabel style={color=blue},
+    xmode=log, xtick={1,10,100,1000}, xticklabels={1,10,100,1000},
+    width=4.5cm, height=4.5cm,
+    title={TKO --- Chicago Crimes},
+    grid=major, ymin=0,
+]
+\addplot[blue, mark=o, line width=1.5pt] coordinates {
+    (1,4.29)(10,5.09)(100,5.55)(1000,6.74)
+};
+\end{axis}
+\begin{axis}[
+    axis y line*=right, axis x line=none,
+    ylabel={Memory (MB)},
+    ylabel style={color=red},
+    yticklabel style={color=red},
+    legend style={at={(0.02,0.02)},anchor=south west},
+    xmode=log, width=4.5cm, height=4.5cm, ymin=0,
+]
+\addplot[red, mark=square, dashed, line width=1.5pt] coordinates {
+    (1,256.87)(10,263.43)(100,252.01)(1000,261.42)
+};
+\end{axis}
+\end{tikzpicture}
+\caption{TKU (left) and TKO (right) runtime and memory on Chicago Crimes dataset.
+    Blue solid line: runtime (left axis). Red dashed line: memory (right axis).}
+\label{fig:chicago-dual}
+\end{figure}
 
-Dataset: mushroom\_utility\_SPMF
-\newline
+% ============================================================
+% Dataset 2: Mushroom
+% ============================================================
+\subsubsection*{Dataset: mushroom\_utility\_SPMF}
 \url{https://www.philippe-fournier-viger.com/spmf/publicdatasets/mushroom_utility_SPMF.txt}
-\begin{table}[H]
-\caption{TKU experiment result}\label{tab:experiment}
-\centering
-\begin{tabular}{@{}lrrr@{}}
-\toprule
-\textbf{k} & \textbf{Runtime(s)} & \textbf{Memory Usage(MB)}  \\
-\midrule
-1 & 10.22 & 7.93  \\
-10 & 34.64 & 184.66   \\
-100 & 83.18 & 288.61  \\
-1000 & 125.08 & 306.25  \\
-\bottomrule
-\end{tabular}
-\end{table}
 
-\begin{table}[H]
-\caption{TKO experiment result}\label{tab:experiment}
+\begin{figure}[H]
 \centering
-\begin{tabular}{@{}lrrr@{}}
-\toprule
-\textbf{k} & \textbf{Runtime(s)} & \textbf{Memory Usage(MB)}  \\
-\midrule
-1 & 1.02 & 19.45  \\
-10 & 1.42 & 20.67   \\
-100 & 3.56 & 21.55  \\
-1000 & 15.48 & 21.56  \\
-\bottomrule
-\end{tabular}
-\end{table}
+\begin{tikzpicture}
+\begin{axis}[
+    axis y line*=left,
+    xlabel={Top-$k$},
+    ylabel={Runtime (s)},
+    ylabel style={color=blue},
+    yticklabel style={color=blue},
+    xmode=log, xtick={1,10,100,1000}, xticklabels={1,10,100,1000},
+    width=4.5cm, height=4.5cm,
+    title={TKU --- Mushroom},
+    grid=major, ymin=0,
+]
+\addplot[blue, mark=o, line width=1.5pt] coordinates {
+    (1,10.22)(10,34.64)(100,83.18)(1000,125.08)
+};
+\end{axis}
+\begin{axis}[
+    axis y line*=right, axis x line=none,
+    ylabel={Memory (MB)},
+    ylabel style={color=red},
+    yticklabel style={color=red},
+    legend style={at={(0.02,0.02)},anchor=south west},
+    xmode=log, width=4.5cm, height=4.5cm, ymin=0,
+]
+\addplot[red, mark=square, dashed, line width=1.5pt] coordinates {
+    (1,7.93)(10,184.66)(100,288.61)(1000,306.25)
+};
+\end{axis}
+\end{tikzpicture}
+\hfill
+\begin{tikzpicture}
+\begin{axis}[
+    axis y line*=left,
+    xlabel={Top-$k$},
+    ylabel={Runtime (s)},
+    ylabel style={color=blue},
+    yticklabel style={color=blue},
+    xmode=log, xtick={1,10,100,1000}, xticklabels={1,10,100,1000},
+    width=4.5cm, height=4.5cm,
+    title={TKO --- Mushroom},
+    grid=major, ymin=0,
+]
+\addplot[blue, mark=o, line width=1.5pt] coordinates {
+    (1,1.02)(10,1.42)(100,3.56)(1000,15.48)
+};
+\end{axis}
+\begin{axis}[
+    axis y line*=right, axis x line=none,
+    ylabel={Memory (MB)},
+    ylabel style={color=red},
+    yticklabel style={color=red},
+    legend style={at={(0.02,0.02)},anchor=south west},
+    xmode=log, width=4.5cm, height=4.5cm, ymin=0,
+]
+\addplot[red, mark=square, dashed, line width=1.5pt] coordinates {
+    (1,19.45)(10,20.67)(100,21.55)(1000,21.56)
+};
+\end{axis}
+\end{tikzpicture}
+\caption{TKU (left) and TKO (right) runtime and memory on Mushroom dataset.}
+\label{fig:mushroom-dual}
+\end{figure}
 
-Dataset: retail\_utility\_spmf
-\newline
+% ============================================================
+% Dataset 3: Retail
+% ============================================================
+\subsubsection*{Dataset: retail\_utility\_spmf}
 \url{https://www.philippe-fournier-viger.com/spmf/publicdatasets/retail_utility_spmf.txt}
 
-\begin{table}[H]
-\caption{TKU experiment result}\label{tab:experiment}
+\begin{figure}[H]
 \centering
-\begin{tabular}{@{}lrrr@{}}
-\toprule
-\textbf{k} & \textbf{Runtime(s)} & \textbf{Memory Usage(MB)}  \\
-\midrule
-1 & 1.69 & 1205.59  \\
-10 & 2.72 & 1739.58   \\
-100 & 19.35 & 1234.92  \\
-1000 & 192.54 & 1241.81  \\
-\bottomrule
-\end{tabular}
-\end{table}
+\begin{tikzpicture}
+\begin{axis}[
+    axis y line*=left,
+    xlabel={Top-$k$},
+    ylabel={Runtime (s)},
+    ylabel style={color=blue},
+    yticklabel style={color=blue},
+    xmode=log, xtick={1,10,100,1000}, xticklabels={1,10,100,1000},
+    width=4.5cm, height=4.5cm,
+    title={TKU --- Retail},
+    grid=major, ymin=0,
+]
+\addplot[blue, mark=o, line width=1.5pt] coordinates {
+    (1,1.69)(10,2.72)(100,19.35)(1000,192.54)
+};
+\end{axis}
+\begin{axis}[
+    axis y line*=right, axis x line=none,
+    ylabel={Memory (MB)},
+    ylabel style={color=red},
+    yticklabel style={color=red},
+    legend style={at={(0.02,0.02)},anchor=south west},
+    xmode=log, width=4.5cm, height=4.5cm, ymin=0,
+]
+\addplot[red, mark=square, dashed, line width=1.5pt] coordinates {
+    (1,1205.59)(10,1739.58)(100,1234.92)(1000,1241.81)
+};
+\end{axis}
+\end{tikzpicture}
+\hfill
+\begin{tikzpicture}
+\begin{axis}[
+    axis y line*=left,
+    xlabel={Top-$k$},
+    ylabel={Runtime (s)},
+    ylabel style={color=blue},
+    yticklabel style={color=blue},
+    xmode=log, xtick={1,10,100,1000}, xticklabels={1,10,100,1000},
+    width=4.5cm, height=4.5cm,
+    title={TKO --- Retail},
+    grid=major, ymin=0,
+]
+\addplot[blue, mark=o, line width=1.5pt] coordinates {
+    (1,62.23)(10,74.01)(100,80.72)(1000,183.22)
+};
+\end{axis}
+\begin{axis}[
+    axis y line*=right, axis x line=none,
+    ylabel={Memory (MB)},
+    ylabel style={color=red},
+    yticklabel style={color=red},
+    legend style={at={(0.02,0.02)},anchor=south west},
+    xmode=log, width=4.5cm, height=4.5cm, ymin=0,
+]
+\addplot[red, mark=square, dashed, line width=1.5pt] coordinates {
+    (1,74.89)(10,82.56)(100,84.79)(1000,84.64)
+};
+\end{axis}
+\end{tikzpicture}
+\hfill
+\begin{tikzpicture}
+\begin{axis}[
+    axis y line*=left,
+    xlabel={Top-$k$},
+    ylabel={Runtime (s)},
+    ylabel style={color=blue},
+    yticklabel style={color=blue},
+    xmode=log, xtick={1,10,100,1000}, xticklabels={1,10,100,1000},
+    width=4.5cm, height=4.5cm,
+    title={THUI --- Retail},
+    grid=major, ymin=0,
+]
+\addplot[blue, mark=o, line width=1.5pt] coordinates {
+    (1,0.13)(10,0.38)(100,1.8)(1000,10.33)
+};
+\end{axis}
+\begin{axis}[
+    axis y line*=right, axis x line=none,
+    ylabel={Memory (MB)},
+    ylabel style={color=red},
+    yticklabel style={color=red},
+    legend style={at={(0.02,0.02)},anchor=south west},
+    xmode=log, width=4.5cm, height=4.5cm, ymin=0,
+]
+\addplot[red, mark=square, dashed, line width=1.5pt] coordinates {
+    (1,19.87)(10,248.00)(100,1539.68)(1000,2911.28)
+};
+\end{axis}
+\end{tikzpicture}
+\caption{TKU, TKO, and THUI runtime and memory on Retail dataset.}
+\label{fig:retail-dual}
+\end{figure}
 
-\begin{table}[H]
-\caption{TKO experiment result}\label{tab:experiment}
-\centering
-\begin{tabular}{@{}lrrr@{}}
-\toprule
-\textbf{k} & \textbf{Runtime(s)} & \textbf{Memory Usage(MB)}  \\
-\midrule
-1 & 62.23 & 74.89  \\
-10 & 74.01 & 82.56   \\
-100 & 80.72 & 84.79  \\
-1000 & 183.22 & 84.64  \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\begin{table}[H]
-\caption{THUI experiment result}\label{tab:experiment}
-\centering
-\begin{tabular}{@{}lrrr@{}}
-\toprule
-\textbf{k} & \textbf{Runtime(s)} & \textbf{Memory Usage(MB)}  \\
-\midrule
-1 & 0.13 & 19.87 \\
-10 & 0.38 & 248.00   \\
-100 & 1.8 & 1539.68  \\
-1000 & 10.33 & 2911.28  \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-Dataset: connect\_utility\_spmf
-\newline
+% ============================================================
+% Dataset 4: Connect
+% ============================================================
+\subsubsection*{Dataset: connect\_utility\_spmf}
 \url{https://www.philippe-fournier-viger.com/spmf/publicdatasets/connect_utility_spmf.txt}
 
-\begin{table}[H]
-\caption{THUI experiment result}\label{tab:experiment}
+\begin{figure}[H]
 \centering
-\begin{tabular}{@{}lrrr@{}}
-\toprule
-\textbf{k} & \textbf{Runtime(s)} & \textbf{Memory Usage(MB)}  \\
-\midrule
-1 & 10.04 & 132.21 \\
-10 & 10.9 & 125.67   \\
-100 & 18.42 & 188.57  \\
-1000 & 47.41 & 241.57  \\
-\bottomrule
-\end{tabular}
-\end{table}
+\begin{tikzpicture}
+\begin{axis}[
+    axis y line*=left,
+    xlabel={Top-$k$},
+    ylabel={Runtime (s)},
+    ylabel style={color=blue},
+    yticklabel style={color=blue},
+    xmode=log, xtick={1,10,100,1000}, xticklabels={1,10,100,1000},
+    width=9cm, height=4.5cm,
+    title={THUI --- Connect},
+    grid=major, ymin=0,
+]
+\addplot[blue, mark=o, line width=1.5pt] coordinates {
+    (1,10.04)(10,10.9)(100,18.42)(1000,47.41)
+};
+\end{axis}
+\begin{axis}[
+    axis y line*=right, axis x line=none,
+    ylabel={Memory (MB)},
+    ylabel style={color=red},
+    yticklabel style={color=red},
+    legend style={at={(0.02,0.02)},anchor=south west},
+    xmode=log, width=9cm, height=4.5cm, ymin=0,
+]
+\addplot[red, mark=square, dashed, line width=1.5pt] coordinates {
+    (1,132.21)(10,125.67)(100,188.57)(1000,241.57)
+};
+\end{axis}
+\end{tikzpicture}
+\caption{THUI runtime and memory on Connect dataset.}
+\label{fig:connect-dual}
+\end{figure}
 
-Dataset: accidents\_utility\_spmf
-\newline
-\url{https://www.philippe-fournier-viger.com/spmf/publicdatasets/connect_utility_spmf.txt}
+% ============================================================
+% Dataset 5: Accidents
+% ============================================================
+\subsubsection*{Dataset: accidents\_utility\_spmf}
+\url{https://www.philippe-fournier-viger.com/spmf/publicdatasets/accidents_utility_spmf.txt}
 
-\begin{table}[H]
-\caption{THUI experiment result}\label{tab:experiment}
+\begin{figure}[H]
 \centering
-\begin{tabular}{@{}lrrr@{}}
-\toprule
-\textbf{k} & \textbf{Runtime(s)} & \textbf{Memory Usage(MB)}  \\
-\midrule
-1 & 2.17 & 51.82 \\
-10 & 2.89 & 55.87   \\
-100 & 3.20 & 79.61  \\
-1000 & 8.14 & 154.00  \\
-\bottomrule
-\end{tabular}
-\end{table}
+\begin{tikzpicture}
+\begin{axis}[
+    axis y line*=left,
+    xlabel={Top-$k$},
+    ylabel={Runtime (s)},
+    ylabel style={color=blue},
+    yticklabel style={color=blue},
+    xmode=log, xtick={1,10,100,1000}, xticklabels={1,10,100,1000},
+    width=9cm, height=4.5cm,
+    title={THUI --- Accidents},
+    grid=major, ymin=0,
+]
+\addplot[blue, mark=o, line width=1.5pt] coordinates {
+    (1,2.17)(10,2.89)(100,3.20)(1000,8.14)
+};
+\end{axis}
+\begin{axis}[
+    axis y line*=right, axis x line=none,
+    ylabel={Memory (MB)},
+    ylabel style={color=red},
+    yticklabel style={color=red},
+    legend style={at={(0.02,0.02)},anchor=south west},
+    xmode=log, width=9cm, height=4.5cm, ymin=0,
+]
+\addplot[red, mark=square, dashed, line width=1.5pt] coordinates {
+    (1,51.82)(10,55.87)(100,79.61)(1000,154.00)
+};
+\end{axis}
+\end{tikzpicture}
+\caption{THUI runtime and memory on Accidents dataset.}
+\label{fig:accidents-dual}
+\end{figure}

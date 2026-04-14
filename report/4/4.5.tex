@@ -1,10 +1,10 @@
 \subsection{Analysis}
 
-\paragraph{TKU} is the slowest due to its inherent two-phase design. Phase~2 requires scanning the entire database for each candidate, with complexity $O(C' \times N \times L)$. However, TKU has the lowest memory usage on dense datasets because the UP-Tree compresses data effectively and Phase~2 does not maintain utility-lists.
+\paragraph{TKU} is the slowest due to Phase~2 re-scanning the database for every candidate. Its memory is low at small $k$ (Mushroom $k{=}1$: 7.93\,MB vs.\ TKO's 19.45\,MB) thanks to UP-Tree compression, but grows sharply as $k$ increases (Retail $k{=}10$: 1739\,MB).
 
-\paragraph{TKO} eliminates Phase~2 entirely, computing exact utilities via utility-list joins. However, on dense datasets (Chess, Accidents), the number of utility-list entries explodes, consuming significant memory. TKO's strategies (RUC, RUZ, EPB) are effective but raise the threshold only during mining.
+\paragraph{TKO} eliminates Phase~2 via utility-list joins and maintains stable memory on sparse data (Retail: 74--84\,MB across all $k$). However, it starts with a low $minUtility$, and on very dense datasets its utility-lists may explode in size.
 
-\paragraph{THUI} achieves the best runtime by aggressively raising the threshold \textit{before} mining begins. The LIU-E strategy provides exact leaf utility values, while LIU-LB generates combinatorial lower bounds from subsets. Together, they raise $minUtility$ significantly higher than TKO's starting point, pruning more branches in the recursive search. THUI's memory overhead is slightly higher than TKO due to the LIU matrix, but the runtime improvement more than compensates.
+\paragraph{THUI} achieves the best runtime by raising $minUtility$ aggressively \textit{before} mining (Retail $k{=}1000$: 10.3\,s vs.\ 183\,s TKO, 192\,s TKU). The trade-off is memory: it grows from 19\,MB to 2911\,MB on Retail as $k$ increases from 1 to 1000 — 34$\times$ higher than TKO.
 
 \begin{table}[H]
 \caption{Summary of algorithm characteristics}\label{tab:summary}
@@ -18,8 +18,10 @@ Data structure & UP-Tree & Utility-List & Utility-List + LIU \\
 DB scans & 3+ (2 build + N verify) & 2 & 2 \\
 Exact utility & Phase 2 only & During mining & During mining \\
 Threshold strategies & PE, NU, MD, MC, SE & RUC, RUZ, EPB & RIU, EUCS, LIU-E, LIU-LB \\
-Initial threshold & Moderate (PE) & 0 (or low) & High (RIU + LIU) \\
-Best for & Small--medium data & Sparse data & Dense \& large data \\
+Initial threshold & Moderate (PE) & Low (0 or minimal) & High (RIU + LIU) \\
+Memory (small $k$) & Low (UP-Tree only) & Low--moderate & Low \\
+Memory (large $k$) & High (candidate growth) & Stable (sparse data) & Very high (LIU growth) \\
+Best for & Small $k$, any density & Large $k$, sparse/medium & Large $k$, runtime-critical \\
 \bottomrule
 \end{tabular}
 \end{table}
