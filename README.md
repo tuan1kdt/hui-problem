@@ -53,7 +53,7 @@ So TKU **does not** require you to guess **minUtil**; it **learns** a running cu
 ## Build and CLI
 
 ```bash
-go build -o hui-problem ./cmd/hui-problem
+go build -o hui-problem.exe ./cmd/hui-problem
 ```
 
 Run TKU on an SPMF utility database (`items : transactionUtility : itemUtilities` per line):

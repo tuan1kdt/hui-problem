@@ -1,26 +1,71 @@
-\subsection{Analysis}
-
-\paragraph{TKU} is the slowest due to its inherent two-phase design. Phase~2 requires scanning the entire database for each candidate, with complexity $O(C' \times N \times L)$. However, TKU has the lowest memory usage on dense datasets because the UP-Tree compresses data effectively and Phase~2 does not maintain utility-lists.
-
-\paragraph{TKO} eliminates Phase~2 entirely, computing exact utilities via utility-list joins. However, on dense datasets (Chess, Accidents), the number of utility-list entries explodes, consuming significant memory. TKO's strategies (RUC, RUZ, EPB) are effective but raise the threshold only during mining.
-
-\paragraph{THUI} achieves the best runtime by aggressively raising the threshold \textit{before} mining begins. The LIU-E strategy provides exact leaf utility values, while LIU-LB generates combinatorial lower bounds from subsets. Together, they raise $minUtility$ significantly higher than TKO's starting point, pruning more branches in the recursive search. THUI's memory overhead is slightly higher than TKO due to the LIU matrix, but the runtime improvement more than compensates.
+\subsection{Comparison Results}
+We use dataset mushroom\_utility\_spmf and retail\_utility\_spmf to make a comparison
+\newline
+Dataset: mushroom\_utility\_spmf
+\url{https://www.philippe-fournier-viger.com/spmf/publicdatasets/mushroom_utility_SPMF.txt}
 
 \begin{table}[H]
-\caption{Summary of algorithm characteristics}\label{tab:summary}
+\caption{Runtime comparison (seconds)}\label{tab:runtime}
 \centering
-\begin{tabular}{@{}llll@{}}
+\begin{tabular}{@{}lrrr@{}}
 \toprule
-\textbf{Feature} & \textbf{TKU} & \textbf{TKO} & \textbf{THUI} \\
+\textbf{k} & \textbf{TKU} & \textbf{TKO} & \textbf{THUI} \\
 \midrule
-Phases & 2 & 1 & 1 \\
-Data structure & UP-Tree & Utility-List & Utility-List + LIU \\
-DB scans & 3+ (2 build + N verify) & 2 & 2 \\
-Exact utility & Phase 2 only & During mining & During mining \\
-Threshold strategies & PE, NU, MD, MC, SE & RUC, RUZ, EPB & RIU, EUCS, LIU-E, LIU-LB \\
-Initial threshold & Moderate (PE) & 0 (or low) & High (RIU + LIU) \\
-Memory & Low--Moderate & High (dense) & High (dense) + LIU \\
-Best for & Small--medium data & Sparse data & Dense \& large data \\
+1 & 10.22 & 1.02 & 0.13 \\
+10 & 34.64 & 1.42 & 0.15 \\
+100 & 83.18 & 3.56 & 0.2 \\
+1000 & 125.08 & 15.48 & 0.36 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\caption{Peak memory usage (MB)}\label{tab:memory}
+\centering
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+\textbf{k} & \textbf{TKU} & \textbf{TKO} & \textbf{THUI} \\
+\midrule
+1 & 7.93 & 19.45 & 11.18 \\
+10 & 184.66 & 20.67 & 11.60 \\
+100 & 288.61 & 21.55 & 12.55 \\
+1000 & 306.25 & 21.56 & 28.86 \\
+
+\bottomrule
+\end{tabular}
+\end{table}
+
+Dataset: retail\_utility\_spmf
+\newline
+\url{https://www.philippe-fournier-viger.com/spmf/publicdatasets/retail_utility_spmf.txt}
+
+\begin{table}[H]
+\caption{Runtime comparison (seconds)}\label{tab:runtime}
+\centering
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+\textbf{k} & \textbf{TKU} & \textbf{TKO} & \textbf{THUI} \\
+\midrule
+1 & 1.69 & 62.23 & 0.13 \\
+10 & 2.72 & 74.01 & 0.38 \\
+100 & 19.35 & 80.72 & 1.3 \\
+1000 & 192.54 & 183.22 & 10.33 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\caption{Peak memory usage (MB)}\label{tab:memory}
+\centering
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+\textbf{k} & \textbf{TKU} & \textbf{TKO} & \textbf{THUI} \\
+\midrule
+1 & 1205.59 & 74.89 & 19.87 \\
+10 & 1739.58 & 82.56 & 248.00 \\
+100 & 1234.92 & 84.79 & 1539.68 \\
+1000 & 1241.81 & 84.64 & 2911.28 \\
+
 \bottomrule
 \end{tabular}
 \end{table}

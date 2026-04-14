@@ -1,35 +1,153 @@
-\subsection{Comparison Results}
-
+\subsection{Results}
+Dataset: Chicago\_Crimes\_2001\_to\_2017\_utility
+\newline
+\url{https://www.philippe-fournier-viger.com/spmf/publicdatasets/Chicago_Crimes_2001_to_2017_utility.txt}
 \begin{table}[H]
-\caption{Runtime comparison (seconds, $k=1000$)}\label{tab:runtime}
+\caption{TKU experiment result}\label{tab:experiment}
 \centering
 \begin{tabular}{@{}lrrr@{}}
 \toprule
-\textbf{Dataset} & \textbf{TKU} & \textbf{TKO} & \textbf{THUI} \\
+\textbf{k} & \textbf{Runtime(s)} & \textbf{Memory Usage(MB)}  \\
 \midrule
-DB\_Utility & 0.01 & 0.01 & 0.01 \\
-Retail & 2.45 & 1.12 & \textbf{0.85} \\
-Mushroom & 15.8 & 4.20 & \textbf{2.80} \\
-Chess & 52.3 & 8.90 & \textbf{5.60} \\
-Accidents & 120+ & 35.2 & \textbf{18.5} \\
-Kosarak & 8.50 & 3.80 & \textbf{2.10} \\
+1 & 3.60 & 302.73  \\
+10 & 4.75 & 293.11   \\
+100 & 12.72 & 313.25  \\
+1000 & 92.05 & 313.46  \\
 \bottomrule
 \end{tabular}
 \end{table}
 
 \begin{table}[H]
-\caption{Peak memory usage (MB, $k=1000$)}\label{tab:memory}
+\caption{TKO experiment result}\label{tab:experiment}
 \centering
 \begin{tabular}{@{}lrrr@{}}
 \toprule
-\textbf{Dataset} & \textbf{TKU} & \textbf{TKO} & \textbf{THUI} \\
+\textbf{k} & \textbf{Runtime(s)} & \textbf{Memory Usage(MB)}  \\
 \midrule
-DB\_Utility & 5 & 5 & 5 \\
-Retail & 180 & 250 & 280 \\
-Mushroom & 450 & 800 & 650 \\
-Chess & 350 & 1200 & 1100 \\
-Accidents & 2500 & 3500 & 3000 \\
-Kosarak & 500 & 350 & 400 \\
+1 & 4.29 & 256.87  \\
+10 & 5.09 & 263.43   \\
+100 & 5.55 & 252.01  \\
+1000 & 6.74 & 261.42  \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Dataset: mushroom\_utility\_SPMF
+\newline
+\url{https://www.philippe-fournier-viger.com/spmf/publicdatasets/mushroom_utility_SPMF.txt}
+\begin{table}[H]
+\caption{TKU experiment result}\label{tab:experiment}
+\centering
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+\textbf{k} & \textbf{Runtime(s)} & \textbf{Memory Usage(MB)}  \\
+\midrule
+1 & 10.22 & 7.93  \\
+10 & 34.64 & 184.66   \\
+100 & 83.18 & 288.61  \\
+1000 & 125.08 & 306.25  \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\caption{TKO experiment result}\label{tab:experiment}
+\centering
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+\textbf{k} & \textbf{Runtime(s)} & \textbf{Memory Usage(MB)}  \\
+\midrule
+1 & 1.02 & 19.45  \\
+10 & 1.42 & 20.67   \\
+100 & 3.56 & 21.55  \\
+1000 & 15.48 & 21.56  \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Dataset: retail\_utility\_spmf
+\newline
+\url{https://www.philippe-fournier-viger.com/spmf/publicdatasets/retail_utility_spmf.txt}
+
+\begin{table}[H]
+\caption{TKU experiment result}\label{tab:experiment}
+\centering
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+\textbf{k} & \textbf{Runtime(s)} & \textbf{Memory Usage(MB)}  \\
+\midrule
+1 & 1.69 & 1205.59  \\
+10 & 2.72 & 1739.58   \\
+100 & 19.35 & 1234.92  \\
+1000 & 192.54 & 1241.81  \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\caption{TKO experiment result}\label{tab:experiment}
+\centering
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+\textbf{k} & \textbf{Runtime(s)} & \textbf{Memory Usage(MB)}  \\
+\midrule
+1 & 62.23 & 74.89  \\
+10 & 74.01 & 82.56   \\
+100 & 80.72 & 84.79  \\
+1000 & 183.22 & 84.64  \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\caption{THUI experiment result}\label{tab:experiment}
+\centering
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+\textbf{k} & \textbf{Runtime(s)} & \textbf{Memory Usage(MB)}  \\
+\midrule
+1 & 0.13 & 19.87 \\
+10 & 0.38 & 248.00   \\
+100 & 1.8 & 1539.68  \\
+1000 & 10.33 & 2911.28  \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Dataset: connect\_utility\_spmf
+\newline
+\url{https://www.philippe-fournier-viger.com/spmf/publicdatasets/connect_utility_spmf.txt}
+
+\begin{table}[H]
+\caption{THUI experiment result}\label{tab:experiment}
+\centering
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+\textbf{k} & \textbf{Runtime(s)} & \textbf{Memory Usage(MB)}  \\
+\midrule
+1 & 10.04 & 132.21 \\
+10 & 10.9 & 125.67   \\
+100 & 18.42 & 188.57  \\
+1000 & 47.41 & 241.57  \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Dataset: accidents\_utility\_spmf
+\newline
+\url{https://www.philippe-fournier-viger.com/spmf/publicdatasets/connect_utility_spmf.txt}
+
+\begin{table}[H]
+\caption{THUI experiment result}\label{tab:experiment}
+\centering
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+\textbf{k} & \textbf{Runtime(s)} & \textbf{Memory Usage(MB)}  \\
+\midrule
+1 & 2.17 & 51.82 \\
+10 & 2.89 & 55.87   \\
+100 & 3.20 & 79.61  \\
+1000 & 8.14 & 154.00  \\
 \bottomrule
 \end{tabular}
 \end{table}
