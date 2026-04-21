@@ -1,4 +1,3 @@
-
 package thui
 
 import (
@@ -173,6 +172,13 @@ func NewAlgoTHUI() *AlgoTHUI {
 }
 
 // RunAlgorithm executes the THUI algorithm.
+// The algorithm proceeds in these phases:
+//  1. First scan  – compute TWU and RIU per item; raise minUtility via RIU.
+//  2. Build ULs   – create one UtilityList per surviving item; sort by TWU.
+//  3. Second scan – populate UL elements; build EUCS / leaf maps.
+//  4. Threshold raising – EUCS raise, then Leaf raise.
+//  5. Mining      – recursive thui() traversal with utility-list joins.
+//  6. Output      – drain kPatterns heap and write sorted results.
 func (a *AlgoTHUI) RunAlgorithm(input, output string, eucsPrune bool, topk int) error {
 	a.topkstatic = topk
 	a.MaxMemory = 0
@@ -424,7 +430,7 @@ func (a *AlgoTHUI) secondScan(input string, mapItemToUL map[int]*UtilityList, li
 	return scanner.Err()
 }
 
-// compareItemsDirect uses the map (before twuByIdx is built).
+// compareItemsDirect compares two items by their TWU values (ascending order).
 func (a *AlgoTHUI) compareItemsDirect(item1, item2 int) int {
 	d := a.mapItemToTWU[item1] - a.mapItemToTWU[item2]
 	if d < 0 {
@@ -647,7 +653,9 @@ func (a *AlgoTHUI) raisingThresholdRIU(m map[int]int64, k int) {
 		a.minUtility = vals[k-1]
 	}
 }
-
+// The utility stored for each pair (a, b) is the sum of (util_a + util_b) over
+// all transactions where both appear. This is an exact utility for the 2-itemset
+// {a, b}, so the k-th largest such value is a valid lower bound.
 func (a *AlgoTHUI) raisingThresholdCUDOptimize(k int) {
 	ktopls := &longHeap{}
 	heap.Init(ktopls)
@@ -670,7 +678,19 @@ func (a *AlgoTHUI) raisingThresholdCUDOptimize(k int) {
 		a.minUtility = (*ktopls)[0]
 	}
 }
-
+// raisingThresholdLeaf raises minUtility using two complementary strategies:
+//
+//  LIU-Exact: for every entry in mapLeafMAP, the stored value is the exact
+//  combined utility of a consecutive item group in some transaction. These
+//  are valid itemset utilities and are fed directly into addToLeafPruneUtils.
+//
+//  LIU-LB (Lower Bound): from each consecutive-group utility, estimated
+//  utilities of sub-groups are derived by subtracting individual item
+//  utilities. The nested loops enumerate sub-groups of size 2, 3, and 4.
+//
+//  Finally, all single-item utilities are also considered.
+//
+//  The k-th largest value across all of these estimates becomes the new minUtility.
 func (a *AlgoTHUI) addToLeafPruneUtils(value int64) {
 	if a.leafPruneUtils.Len() < a.topkstatic {
 		heap.Push(a.leafPruneUtils, value)
