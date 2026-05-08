@@ -26,5 +26,6 @@ func NewRootCmd() *cobra.Command {
 	root.AddCommand(newPTKUCmd())
 	root.AddCommand(newTKOCmd())
 	root.AddCommand(newTHUICmd())
+	root.AddCommand(newPTHUICmd())
 	return root
 }

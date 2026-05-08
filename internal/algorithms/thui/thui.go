@@ -48,7 +48,7 @@ func (ul *UtilityList) addElement(e Element) {
 
 func (ul *UtilityList) getUtils() int64 { return ul.sumIutils }
 
-// ItemTHUI stores TWU and utility for the EUCS structure.
+// ItemTHUI stores TWU and combined utility for one item pair in mapFMAP (EUCS).
 type ItemTHUI struct {
 	twu     int64
 	utility int64
