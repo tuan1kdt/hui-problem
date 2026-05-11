@@ -1206,7 +1206,7 @@ func (a *AlgoPTHUI) checkMemoryForce() {
 // PrintStats prints algorithm statistics.
 func (a *AlgoPTHUI) PrintStats() {
 	elapsed := a.EndTimestamp - a.StartTimestamp
-	fmt.Println("=============  THUI ALGORITHM - STATS =============")
+	fmt.Println("============= PARALLEL THUI ALGORITHM - STATS =============")
 	fmt.Printf(" Total time ~ %d ms\n", elapsed)
 	fmt.Printf(" Memory ~ %.2f MB\n", a.MaxMemory)
 	fmt.Printf(" High-utility itemsets count : %d  Candidates : %d\n", a.HuiCount, a.CandidateCount)
