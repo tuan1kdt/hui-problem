@@ -3,19 +3,19 @@
 \begin{table}[H]
 \caption{Parallelization opportunities per algorithm}\label{tab:par_summary}
 \centering
-\begin{tabular}{@{}llll@{}}
+\begin{tabular}{@{}lllll@{}}
 \toprule
-\textbf{Step} & \textbf{TKU} & \textbf{TKO} & \textbf{THUI} \\
+\textbf{Step} & \textbf{TKU} & \textbf{TKO} & \textbf{PTKO} & \textbf{THUI} \\
 \midrule
-DB Scan / TWU & MapReduce & MapReduce & MapReduce \\
-Threshold pre-raise & PE: MapReduce & --- & RIU: MapReduce \\
- & & &  LIU: MapReduce \\
- & & &  LIU-LB: Fork/Join \\
-Tree/List build & Pipeline & Fork/Join & Fork/Join \\
-Recursive mining & Fork/Join & Fork/Join & Fork/Join \\
-Candidate verify & MapReduce & N/A & N/A \\
-Shared mutable state & TopK Heap & TopK Heap & TopK Heap \\
-Sync mechanism & RWMutex & RWMutex & RWMutex \\
+DB Scan / TWU & MapReduce & MapReduce & MapReduce & MapReduce \\
+Threshold pre-raise & PE: MapReduce & --- & Speculative ($k$-th UL) & RIU: MapReduce \\
+ & & & & LIU: MapReduce \\
+ & & & & LIU-LB: Fork/Join \\
+Tree/List build & Pipeline & Fork/Join & Sequential & Fork/Join \\
+Recursive mining & Fork/Join & Fork/Join & Top-level Fork/Join & Fork/Join \\
+Candidate verify & MapReduce & N/A & N/A & N/A \\
+Shared mutable state & TopK Heap & TopK Heap & TopK Heap & TopK Heap \\
+Sync mechanism & RWMutex & RWMutex & Atomic CAS + Mutex & RWMutex \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -31,6 +31,7 @@ Single machine, DB fits RAM & Fork/Join & Low overhead, work stealing \\
 Single machine, DB $>$ RAM & Streaming + goroutines & Memory-efficient \\
 Cluster, DB distributed & MapReduce (Spark) & Horizontal scaling \\
 Deep recursive search & Fork/Join + semaphore & Limit goroutine explosion \\
+Utility-list search (PTKO) & Top-level Fork/Join + Atomic CAS & No goroutine explosion; fast threshold propagation \\
 \bottomrule
 \end{tabular}
 \end{table}

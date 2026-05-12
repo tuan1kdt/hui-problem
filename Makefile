@@ -35,8 +35,9 @@ test-all: build
 	@echo "Running all algorithms on $(TESTDATA)..."
 	@$(MKDIR_CMD) outputs
 	$(BINARY_NAME) tku -i $(TESTDATA) -o outputs/tku-output.txt -k 10
-	$(BINARY_NAME) tko -i $(TESTDATA) -o outputs/tko-output.txt -k 8
-	$(BINARY_NAME) ptku -i $(TESTDATA) -o outputs/ptku-output.txt -k 10
+	$(BINARY_NAME) tko -i $(TESTDATA) -o outputs/tko-output.txt -k 10
+	$(BINARY_NAME) ptko -i $(TESTDATA) -o outputs/ptko-output.txt -k 10
+	#$(BINARY_NAME) ptku -i $(TESTDATA) -o outputs/ptku-output.txt -k 10
 	$(BINARY_NAME) thui -i $(TESTDATA) -o outputs/thui-output.txt -k 10
 	@echo "✓ All algorithms completed. Results saved to outputs/ directory"
 
@@ -81,7 +82,7 @@ help:
 	@echo "Available targets:"
 	@echo "  build       - Build the CLI binary"
 	@echo "  test-all    - Run all algorithms with separate output files"
-	@echo "  run         - Run a single algorithm (ALGO=tku|tko|ptku|thui)"
+	@echo "  run         - Run a single algorithm (ALGO=tku|tko|ptko|ptku|thui)"
 	@echo "  benchmark   - Run benchmark experiments and print comparison tables"
 	@echo "  report      - Generate PDF report from LaTeX sources"
 	@echo "  clean       - Remove generated files"

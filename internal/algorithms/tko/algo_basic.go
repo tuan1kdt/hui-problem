@@ -31,31 +31,39 @@ func NewAlgoTKOBasic() *AlgoTKOBasic {
 }
 
 // RunAlgorithm scans the database, mines, and writes results to output (Java: runAlgorithm + writeResultTofile).
+// TKO uses a one-phase approach: builds utility lists once, then dynamically raises minUtility threshold during search.
 func (a *AlgoTKOBasic) RunAlgorithm(inputPath, outputPath string, k int) error {
 	memory.Reset()
 	memory.Sample()
 
 	start := time.Now()
-	a.minUtility = 1
+	a.minUtility = 1 // Start with minUtility = 1; will be raised dynamically as better itemsets are found
 	a.k = k
-	a.kHeap = nil
+	a.kHeap = nil // Min-heap to store top-k itemsets
 	a.mapItemToTWU = make(map[int]int)
 
+	// Step 1: First database pass — compute Transaction Weighted Utility (TWU) for each item.
+	// TWU is a global pruning threshold: items with low TWU cannot be in high-utility itemsets.
 	if err := a.firstPass(inputPath); err != nil {
 		return err
 	}
 
+	// Step 2: Build utility list structure and populate with transaction data.
+	// Sort items by TWU ascending to enable aggressive pruning (explore high-TWU items last).
 	listItems, mapItemToUL, err := a.buildUtilityListShells()
 	if err != nil {
 		return err
 	}
 
+	// Step 2b: Second database pass — populate utility lists with (tid, iutils, rutils) tuples.
 	if err := a.secondPass(inputPath, mapItemToUL); err != nil {
 		return err
 	}
 
 	memory.Sample()
 
+	// Step 3: Recursive depth-first search mining phase.
+	// Uses utility-list joins to construct combined itemsets; dynamically raises minUtility as k itemsets are found.
 	if err := a.search([]int{}, nil, listItems); err != nil {
 		return err
 	}
@@ -63,6 +71,7 @@ func (a *AlgoTKOBasic) RunAlgorithm(inputPath, outputPath string, k int) error {
 	memory.Sample()
 	a.totalTime = time.Since(start).Seconds()
 
+	// Step 4: Write top-k results to output file in SPMF format.
 	if err := a.WriteResultToFile(outputPath); err != nil {
 		return err
 	}
@@ -70,6 +79,9 @@ func (a *AlgoTKOBasic) RunAlgorithm(inputPath, outputPath string, k int) error {
 	return nil
 }
 
+// firstPass scans the database once to compute Transaction Weighted Utility (TWU) for each item.
+// TWU[item] = sum of transaction utilities for all transactions containing that item.
+// Used as a global pruning threshold in the search phase.
 func (a *AlgoTKOBasic) firstPass(inputPath string) error {
 	f, err := os.Open(inputPath)
 	if err != nil {
@@ -103,6 +115,9 @@ func (a *AlgoTKOBasic) firstPass(inputPath string) error {
 	return sc.Err()
 }
 
+// buildUtilityListShells creates empty utility lists for each item and sorts them by TWU ascending.
+// Sorting by TWU enables pruning: low-TWU items are explored first, so when k itemsets are found,
+// we can raise minUtility and prune branches containing high-TWU items more aggressively.
 func (a *AlgoTKOBasic) buildUtilityListShells() ([]*UtilityList, map[int]*UtilityList, error) {
 	listItems := make([]*UtilityList, 0, len(a.mapItemToTWU))
 	mapItemToUL := make(map[int]*UtilityList, len(a.mapItemToTWU))
@@ -111,6 +126,7 @@ func (a *AlgoTKOBasic) buildUtilityListShells() ([]*UtilityList, map[int]*Utilit
 		listItems = append(listItems, ul)
 		mapItemToUL[item] = ul
 	}
+	// Sort by TWU ascending (low first); ties broken by item ID for determinism.
 	sort.Slice(listItems, func(i, j int) bool {
 		twi := a.mapItemToTWU[listItems[i].Item]
 		twj := a.mapItemToTWU[listItems[j].Item]
@@ -127,6 +143,8 @@ type pair struct {
 	utility int
 }
 
+// secondPass populates utility lists with transaction data: (tid, iutils, rutils) tuples.
+// iutils = item utility in this transaction; rutils = sum of utilities for items after this one (for pruning).
 func (a *AlgoTKOBasic) secondPass(inputPath string, mapItemToUL map[int]*UtilityList) error {
 	f, err := os.Open(inputPath)
 	if err != nil {
@@ -159,10 +177,12 @@ func (a *AlgoTKOBasic) secondPass(inputPath string, mapItemToUL map[int]*Utility
 			revised = append(revised, pair{item: item, utility: u})
 			remainingUtility += u
 		}
+		// Sort items by TWU (same order as listItems for consistency).
 		sort.Slice(revised, func(i, j int) bool {
 			return a.compareItems(revised[i].item, revised[j].item) < 0
 		})
 
+		// Add each (tid, iutils, rutils) tuple to the item's utility list.
 		for _, p := range revised {
 			remainingUtility -= p.utility
 			ul := mapItemToUL[p.item]
@@ -182,19 +202,27 @@ func (a *AlgoTKOBasic) compareItems(item1, item2 int) int {
 	return item1 - item2
 }
 
+// search recursively mines itemsets using depth-first search with utility-list pruning.
+// prefix: current itemset; pUL: parent (prefix) utility list; uls: candidate items to extend.
+// Dynamically raises minUtility as k itemsets are found, enabling aggressive pruning.
 func (a *AlgoTKOBasic) search(prefix []int, pUL *UtilityList, uls []*UtilityList) error {
 	memory.Sample()
 	for i := 0; i < len(uls); i++ {
 		X := uls[i]
+		// Check if single item X meets minUtility threshold; if so, add itemset {prefix + X} to heap.
 		if X.SumIutils >= a.minUtility {
 			a.writeOut(prefix, X.Item, X.SumIutils)
 		}
+		// Pruning: check if X can possibly lead to a high-utility itemset.
+		// SumIutils + SumRutils is an upper bound on utility for itemsets containing X.
 		if X.SumRutils+X.SumIutils >= a.minUtility {
+			// Construct utility lists for all pairs (X, Y) where Y comes after X in the sorted order.
 			exULs := make([]*UtilityList, 0, len(uls)-i-1)
 			for j := i + 1; j < len(uls); j++ {
 				Y := uls[j]
 				exULs = append(exULs, a.construct(pUL, X, Y))
 			}
+			// Recurse with extended prefix.
 			newPrefix := make([]int, len(prefix)+1)
 			copy(newPrefix, prefix)
 			newPrefix[len(prefix)] = X.Item
@@ -206,14 +234,19 @@ func (a *AlgoTKOBasic) search(prefix []int, pUL *UtilityList, uls []*UtilityList
 	return nil
 }
 
+// writeOut adds an itemset to the min-heap and maintains only the top-k itemsets.
+// When heap size exceeds k, the weakest itemset is removed and minUtility is raised.
+// This dynamic threshold enables aggressive pruning in later search branches.
 func (a *AlgoTKOBasic) writeOut(prefix []int, item int, utility int64) {
 	is := newItemsetTKO(prefix, item, utility)
 	heap.Push(&a.kHeap, is)
 	if a.kHeap.Len() > a.k {
 		if utility > a.minUtility {
+			// Remove excess itemsets, keeping only the k strongest.
 			for a.kHeap.Len() > a.k {
 				heap.Pop(&a.kHeap)
 			}
+			// Update minUtility to the weakest itemset in the heap for pruning.
 			if a.kHeap.Len() > 0 {
 				a.minUtility = a.kHeap[0].Utility
 			}
@@ -221,6 +254,10 @@ func (a *AlgoTKOBasic) writeOut(prefix []int, item int, utility int64) {
 	}
 }
 
+// construct joins utility lists px and py to create a combined utility list for itemset {P, X, Y}.
+// For each transaction containing both X and Y:
+//   - iutils = iutils[X] + iutils[Y] (- iutils[P] if P is non-null, to avoid double-counting).
+//   - rutils = remaining utility after Y (from py).
 func (a *AlgoTKOBasic) construct(P, px, py *UtilityList) *UtilityList {
 	pxyUL := NewUtilityList(py.Item)
 	for _, ex := range px.Elements {
@@ -229,9 +266,11 @@ func (a *AlgoTKOBasic) construct(P, px, py *UtilityList) *UtilityList {
 			continue
 		}
 		if P == nil {
+			// First itemset: utility = X_iutils + Y_iutils.
 			eXY := Element{ex.TID, ex.Iutils + ey.Iutils, ey.Rutils}
 			pxyUL.AddElement(eXY)
 		} else {
+			// Extended itemset: utility = X_iutils + Y_iutils - P_iutils (subtract prefix to avoid overlap).
 			e := a.findElementWithTID(P, ex.TID)
 			if e != nil {
 				eXY := Element{ex.TID, ex.Iutils + ey.Iutils - e.Iutils, ey.Rutils}

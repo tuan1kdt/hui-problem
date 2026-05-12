@@ -1,10 +1,114 @@
-\subsection{Parallelizing TKO}
+\subsection{Parallelizing TKO (PTKO)}
+\label{sec:ptko}
 
-\paragraph{Utility-List Construction (Fork/Join).}
-Initial utility-lists for single items can be built in parallel by partitioning the database, then merging partial lists.
+Sequential TKO starts with $minUtility = 1$ and raises it only as itemsets accumulate in the heap.
+On large datasets this cold-start causes extensive exploration of low-utility branches before the
+threshold becomes meaningful.
+Our implementation \textbf{PTKO} addresses this with two complementary techniques.
 
-\paragraph{Recursive Search (Fork/Join).}
-Each extension branch in the recursive search is independent and can be forked. Work-stealing schedulers naturally handle unbalanced branches.
+\subsubsection{Technique 1: Speculative Initial Threshold}
 
-\paragraph{Challenge.} Joining utility-lists requires the parent's list, creating dependencies that limit parallelism at deeper recursion levels.
+After building all single-item utility lists (at the end of the second DB scan), the exact
+$SumIutils$ of every 1-item utility list is known.
+The $k$-th largest value among these is a valid lower bound on the final $minUtility$:
+any itemset not reaching this bound cannot appear in the top-$k$ result.
 
+\begin{algorithm}[H]
+\caption{Speculative Threshold Bootstrap}
+\begin{algorithmic}[1]
+\Require Utility lists $\mathcal{L} = \{UL_1, \ldots, UL_m\}$, parameter $k$
+\State $S \leftarrow \text{sort}(\{UL_i.SumIutils\},\;\text{descending})$
+\If{$|\mathcal{L}| \geq k$}
+    \State $minUtility \leftarrow S[k-1]$ \Comment{$k$-th largest single-item utility}
+\EndIf
+\end{algorithmic}
+\end{algorithm}
+
+This eliminates the cold-start overhead: workers begin with a threshold close to the final
+answer and prune most low-utility branches from the very first iteration.
+Note that only the single-item \emph{writeOut} check is affected; the upper-bound pruning
+condition $SumIutils + SumRutils \geq minUtility$ still allows recursion into items whose
+individual utility is below the threshold if their extension potential is sufficient.
+
+\subsubsection{Technique 2: Top-Level Fork/Join with Atomic Threshold}
+
+\paragraph{Correctness observation.}
+In TKO's DFS, items are sorted ascending by TWU.
+When the search processes top-level item $X_i$, the extended utility lists
+$\widetilde{UL}(X_i, X_j)$ for all $j > i$ are \emph{freshly constructed} (new allocations)
+and are private to the branch rooted at $X_i$.
+No two top-level branches share mutable data --- only two primitives are shared:
+
+\begin{enumerate}
+  \item $minUtility$: the pruning threshold (raised monotonically, never lowered).
+  \item $topKHeap$: the result collection (push/pop operations).
+\end{enumerate}
+
+\paragraph{Worker pool and depth cutoff.}
+Top-level items are partitioned into $W$ contiguous ranges (one per worker goroutine).
+Each goroutine explores its range sequentially, recursing into sub-trees without spawning
+further goroutines.
+This \emph{depth cutoff at 0} avoids goroutine explosion while still exposing enough
+parallelism to utilize all cores.
+
+\begin{algorithm}[H]
+\caption{PTKO: Top-Level Fork/Join with Atomic Threshold}
+\begin{algorithmic}[1]
+\Require $\mathcal{L} = [X_0, \ldots, X_{n-1}]$ (sorted ascending by TWU), workers $W$
+\State $chunk \leftarrow \lceil n / W \rceil$
+\For{$w \leftarrow 0$ \textbf{to} $W-1$} \textbf{in parallel} \Comment{Fork}
+    \For{$i \leftarrow w \cdot chunk$ \textbf{to} $\min((w{+}1)\cdot chunk,\,n)-1$}
+        \State $minU \leftarrow \textsc{AtomicLoad}(minUtility)$
+        \If{$X_i.SumIutils \geq minU$}
+            \State \textsc{WriteOut}$(\emptyset,\; X_i)$ \Comment{mutex-protected heap push}
+        \EndIf
+        \If{$X_i.SumIutils + X_i.SumRutils \geq \textsc{AtomicLoad}(minUtility)$}
+            \State $exULs \leftarrow [\widetilde{UL}(X_i, X_j) \mid j > i]$
+            \State \textsc{Search}$([X_i.item],\; X_i,\; exULs)$ \Comment{sequential DFS}
+        \EndIf
+    \EndFor
+\EndFor \Comment{Join — wait for all goroutines}
+\end{algorithmic}
+\end{algorithm}
+
+\paragraph{Atomic threshold propagation.}
+$minUtility$ is stored as an \texttt{atomic.Int64}.
+\textsc{WriteOut} holds a mutex only long enough to push/trim the heap;
+after releasing the mutex it raises $minUtility$ using a CAS retry loop:
+
+\begin{algorithm}[H]
+\caption{CAS Raise of Atomic $minUtility$}
+\begin{algorithmic}[1]
+\Procedure{RaiseMinUtil}{$newVal$}
+\Repeat
+    \State $old \leftarrow \textsc{AtomicLoad}(minUtility)$
+    \If{$newVal \leq old$} \Return \EndIf
+\Until{$\textsc{CAS}(minUtility,\; old,\; newVal)$}
+\EndProcedure
+\end{algorithmic}
+\end{algorithm}
+
+Because CAS is a \textbf{raise-only} operation, concurrent calls always converge to
+the highest value seen so far.
+Other goroutines observe the raised threshold on their next $\textsc{AtomicLoad}$ call
+at the top of their pruning check --- no lock is needed for reads.
+
+\paragraph{Challenge: unequal subtree sizes.}
+Items are sorted by TWU ascending, so the last range (high-TWU items) tends to have
+deeper, more expensive sub-trees.
+Static partitioning may leave some workers idle while others are still busy.
+A work-stealing task queue (channel-based) would improve balance at the cost of
+implementation complexity; we leave this as future work.
+
+\paragraph{Thread safety argument.}
+\begin{itemize}
+  \item \emph{Utility lists built in secondPass} are never mutated after construction
+        (Elements slice is only appended to during secondPass, then frozen).
+        Concurrent reads during \textsc{Construct} are safe.
+  \item \emph{mapItemToTWU} is read-only after firstPass.
+  \item \emph{kHeap} mutations are serialized by \texttt{sync.Mutex}.
+  \item \emph{$minUtility$} is updated only via \textsc{RaiseMinUtil} (CAS, raise-only).
+        Goroutines may briefly use a stale (lower) threshold, causing a few extra
+        utility-list constructions that are harmless: their results pass through
+        \textsc{WriteOut} and are evicted from the heap if below the final top-$k$ boundary.
+\end{itemize}
