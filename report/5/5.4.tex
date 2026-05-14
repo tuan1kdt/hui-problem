@@ -1,27 +1,177 @@
 \subsection{Parallelizing THUI}
 
+Utility-list element slices are frozen after \texttt{secondScanParallel}
+returns (no further writes), so concurrent \textsc{Construct} calls read
+them safely without any lock.
+\texttt{mapItemToTWU} and \texttt{mapFMAP} are read-only during mining.
+\texttt{kPatterns} mutations are serialised by \texttt{kPatternsMu}, held
+only for the push/trim operation; $\mathit{minUtility}$ is updated inside
+the same critical section.
+Other goroutines may briefly observe a stale (lower) $\mathit{minUtility}$,
+causing a few extra utility-list constructions whose results are evicted from
+the heap if below the final top-$k$ boundary -- the algorithm remains correct
+because $\mathit{minUtility}$ is only ever raised.
+
 \paragraph{RIU Computation (MapReduce).}
 Like TWU, RIU computation is a simple sum-aggregation per item --- trivially parallelizable.
 
 \paragraph{LIU Matrix Construction (MapReduce).}
-Each transaction contributes independently to the LIU matrix. Mappers process partitions and emit (leafIndex, suffixIndex, utility); reducers sum:
+Mappers build per-worker EUCS and LIU buffers; utility-list appends use
+per-list mutexes (\texttt{ul.mu}), so different items never contend.
+After the join, lists are re-sorted by \textit{tid} (parallel fork/join).
 
 \begin{algorithm}[H]
-\caption{MapReduce for LIU Matrix}
+\caption{Utility-List and LIU Construction (\texttt{secondScanParallel})}
+\label{alg:pthui-scan2}
 \begin{algorithmic}[1]
-\State \textbf{Map}$(partition_i)$:
-\For{each $T_r \in partition_i$}
-    \For{each leaf-suffix pair $(leaf, start, cutil)$}
-        \State emit$((leaf, start),\; cutil)$
+
+\For{$w \leftarrow 0$ \textbf{to} $W{-}1$ \textbf{in parallel}}
+  \For{each transaction $T'$ }
+    \For{$i \leftarrow |T'|{-}1$ \textbf{downto} $0$}
+      \State \PAR{lock \texttt{UL[$I_i$].mu}};\quad
+             append $(\mathit{tid}, u_i, \mathit{remUtil})$ to $UL[I_i]$;\quad unlock
+      \State update $\mathit{localFMAP}_w$ for all $j > i$ \hfill\Comment{local, no lock}
+      \State emit LIU to $\mathit{leafEmits}_w$ \hfill\Comment{local, no lock}
     \EndFor
+  \EndFor
 \EndFor
-\State \textbf{Reduce}$((leaf, start),\; [c_1, \ldots])$: sum $\leftarrow \sum c_i$
+\State \PAR{JOIN} \textbf{wg.Wait()}
+
+\Comment{\PAR{REDUCE} -- merge EUCS and LIU buffers (serial)}
+\For{$w \leftarrow 0$ \textbf{to} $W{-}1$}
+  \State $\mathit{mapFMAP} \mathrel{+}= \mathit{localFMAP}_w$;\quad
+         $\mathit{mapLeafMAP} \mathrel{+}= \mathit{leafEmits}_w$
+\EndFor
+
+\Comment{\PAR{Fork/Join} -- re-sort each $UL[I_j]$ by \textit{tid} in parallel}
+\For{each $UL[I_j]$ with $\geq 2$ elements \textbf{in parallel}}
+  \State sort $UL[I_j]$ by $\mathit{tid}$
+\EndFor
+\State \PAR{JOIN} \textbf{wg.Wait()}
 \end{algorithmic}
 \end{algorithm}
 
 \paragraph{LIU-LB Threshold Raising (Fork/Join).}
-The nested loop in LIU-LB (Algorithm~\ref{alg:liulb}) iterates over combinatorial subsets. Each outer iteration is independent and can be forked into separate threads.
+Each outer \texttt{mapLeafMAP} entry is independent; goroutines maintain
+private size-$k$ min-heaps, merged serially after join.
+Each goroutine reads a \emph{snapshot} of $\mathit{minUtility}$ (safe: only
+ever raised monotonically); stale snapshots produce extra sub-threshold
+candidates, silently discarded at merge.
+\begin{algorithm}[H]
+\caption{LIU-LB Threshold Raising (\texttt{raisingThresholdLeafParallel})}
+\label{alg:pthui-liulb}
+\begin{algorithmic}[1]
+\For{$w \leftarrow 0$ \textbf{to} $W{-}1$ \textbf{in parallel}}
+  \State $\mathit{snap} \leftarrow \mathit{minUtility}$
+  \For{each $(\mathit{end}, \mathit{st}) \to V$ in partition$_w$ with $V \geq \mathit{snap}$}
+    \State \Call{InsertTopK}{$\mathit{localHeap}_w,\;V$}
+    \For{$i \leftarrow \mathit{st}{+}1$ \textbf{to} $\mathit{end}{-}2$}
+      \hfill\Comment{remove 1, 2, or 3 items; insert if $\geq \mathit{snap}$}
+      \State $V_1 \leftarrow V - UL[i].\mathit{sumIutils}$;\quad
+             \textbf{if} $V_1 \geq \mathit{snap}$: \Call{InsertTopK}{$\mathit{localHeap}_w,\;V_1$}
+      \For{$j \leftarrow i{+}1$ \textbf{to} $\mathit{end}{-}2$}
+        \State $V_2 \leftarrow V_1 - UL[j].\mathit{sumIutils}$;\quad
+               \textbf{if} $V_2 \geq \mathit{snap}$: \Call{InsertTopK}{$\mathit{localHeap}_w,\;V_2$}
+        \For{$m \leftarrow j{+}1$; $m{+}1 < \mathit{end}{-}1$}
+          \State $V_3 \leftarrow V_2 - UL[m].\mathit{sumIutils}$;\quad
+                 \textbf{if} $V_3 \geq \mathit{snap}$: \Call{InsertTopK}{$\mathit{localHeap}_w,\;V_3$}
+        \EndFor
+      \EndFor
+    \EndFor
+  \EndFor
+\EndFor
+\State \PAR{JOIN} \textbf{wg.Wait()}
+
+\Comment{\PAR{REDUCE} -- merge local heaps into global \textit{leafHeap} (serial)}
+\For{$w \leftarrow 0$ \textbf{to} $W{-}1$}
+  \State drain $\mathit{localHeap}_w$ into $\mathit{leafHeap}$
+\EndFor
+\State add single-item utilities; if $|\mathit{leafHeap}| \geq k$: raise $\mathit{minUtility} \leftarrow \mathit{leafHeap}.\min$
+\end{algorithmic}
+\end{algorithm}
 
 \paragraph{Recursive Mining (Fork/Join).}
 Identical to TKO --- the THUI mining procedure's extension loop (Algorithm~\ref{alg:thui_mine}) can be parallelized by forking each extension branch.
+\texttt{kPatterns} / $\mathit{minUtility}$: protected by
+        \texttt{kPatternsMu} (\texttt{sync.Mutex}) inside
+        \textsc{SaveSafe}.
+
+\begin{algorithm}[H]
+\caption{Parallel Mining Root (\texttt{thuiParallel})}
+\label{alg:pthui-mining-root}
+\begin{algorithmic}[1]
+
+
+\For{$i \leftarrow |UL|{-}1$ \textbf{downto} $0$}
+  \hfill\Comment{save root single-item HUIs (serial)}
+  \If{$UL[i].\mathit{sumIutils} \geq \mathit{minUtility}$}
+    \Call{SaveSafe}{$\emptyset, UL[i]$}
+  \EndIf
+\EndFor
+
+\Comment{\PAR{FORK} -- one goroutine per surviving branch, throttled by semaphore}
+\For{each $UL[i]$ \textbf{in parallel}}
+  \For{$j \leftarrow i{+}1$ \textbf{to} $|UL|{-}1$}
+    \State \PAR{\texttt{atomic.Add}(\&candidateCount64, 1)}
+    \State $Z \leftarrow \textsc{Construct}(\mathbf{nil}, UL[i], UL[j])$;\quad
+           \textbf{if} $Z \neq \mathbf{nil}$: append to $\mathit{exULs}$
+  \EndFor
+  \State \Call{ThuiSerial}{$[UL[i].\mathit{item}],\;\mathit{depth}{=}1,\;UL[i],\;\mathit{exULs}$}
+\EndFor
+\State \PAR{JOIN} \textbf{wg.Wait()}
+\end{algorithmic}
+\end{algorithm}
+
+\begin{algorithm}[H]
+\caption{Serial DFS, Depth $\geq 1$ (\texttt{thuiSerial})}
+\label{alg:pthui-mining-serial}
+\begin{algorithmic}[1]
+\Procedure{ThuiSerial}{$P, \mathit{depth}, \mathit{pUL}, \mathit{ULs}$}
+  \State $\mathit{thresh} \leftarrow \mathit{minUtility}$ \hfill\Comment{snapshot}
+  \For{$i \leftarrow |\mathit{ULs}|{-}1$ \textbf{downto} $0$}
+    \If{$\mathit{ULs}[i].\mathit{sumIutils} \geq \mathit{thresh}$}
+      \Call{SaveSafe}{$P, \mathit{ULs}[i]$}
+      \hfill\Comment{\PAR{guarded by \texttt{kPatternsMu}}}
+    \EndIf
+  \EndFor
+  \For{$i \leftarrow |\mathit{ULs}|{-}2$ \textbf{downto} $0$}
+    \State $X \leftarrow \mathit{ULs}[i]$
+    \For{$j \leftarrow i{+}1$ \textbf{to} $|\mathit{ULs}|{-}1$}
+        \State \PAR{\texttt{atomic.Add}(\&candidateCount64,1)};
+      \State $Z \leftarrow \textsc{Construct}(\mathit{pUL}, X, \mathit{ULs}[j])$;
+       \State \textbf{if} $Z \neq \mathbf{nil}$: append to $\mathit{exULs}$
+    \EndFor
+    \State $\mathit{thresh} \leftarrow \mathit{minUtility}$;\quad
+           \Call{ThuiSerial}{$P, \mathit{depth}{+}1, X, \mathit{exULs}$}
+  \EndFor
+\EndProcedure
+\end{algorithmic}
+\end{algorithm}
+
+\begin{algorithm}[H]
+\caption{Thread-Safe Top-$k$ Heap Push
+  (\texttt{saveSafe}, \texttt{pthui.go} lines 933--959)}
+\label{alg:pthui-savesafe}
+\begin{algorithmic}[1]
+\Procedure{SaveSafe}{$P,\;X$}
+  \State $p \leftarrow \textsc{PatternTHUI}\{
+         \mathit{prefix}{=}P,\;
+         \mathit{item}{=}X.\mathit{item},\;
+         \mathit{utility}{=}X.\mathit{sumIutils}\}$
+  \State \PAR{\textbf{lock} \texttt{kPatternsMu}}
+         \hfill\Comment{exclusive access to heap + $\mathit{minUtility}$}
+  \State $\textsc{Push}(\mathit{kPatterns},\;p)$
+  \If{$|\mathit{kPatterns}| > k$}
+    \If{$X.\mathit{sumIutils} \geq \mathit{minUtility}$}
+      \While{$|\mathit{kPatterns}| > k$}
+        $\textsc{Pop}(\mathit{kPatterns})$
+      \EndWhile
+    \EndIf
+    \State $\mathit{minUtility} \leftarrow \mathit{kPatterns}.\min$
+           \hfill\Comment{raise threshold to new heap minimum}
+  \EndIf
+  \State \textbf{unlock} \texttt{kPatternsMu}
+\EndProcedure
+\end{algorithmic}
+\end{algorithm}
 
