@@ -4,6 +4,7 @@ This repository is a **Go** toolkit for **high-utility itemset mining**: finding
 
 The first algorithm provided is **TKU** (Top-K High Utility itemsets), implemented in the [`tku`](internal/algorithm/tku/) package and exposed through the [`hui-problem`](cmd/hui-problem/) CLI.
 
+Presentation: https://youtu.be/7J08GGOpIFo
 ---
 
 ## The problem
